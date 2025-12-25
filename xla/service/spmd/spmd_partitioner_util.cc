@@ -3150,7 +3150,6 @@ GetMeshAxesPartitionGroupsForReplication(
   if (axis_refs.empty()) {
     return std::nullopt;
   }
-  SortAndMergeAxes(axis_refs, *mesh);
   return MeshAxesReplicaGroupList(*mesh, axis_refs);
 }
 

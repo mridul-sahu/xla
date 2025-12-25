@@ -394,7 +394,10 @@ class HloSharding {
   // Returns if the sharding has partial replication and partial sharding. If
   // true, data is sharded according to other dimensions of tile_assignment(),
   // but replicated across devices along the last dimension.
-  bool ReplicateOnLastTileDim() const { return replicate_on_last_tile_dim_; }
+  bool ReplicateOnLastTileDim() const {
+    // CHECK(!UseNamedShardingLeaf());
+    return replicate_on_last_tile_dim_;
+  }
 
   // Returns whether there is any partial replication. This can be using
   // ReplicateOnLastTileDim or subgroups with REPLICATED.
@@ -612,6 +615,9 @@ class HloSharding {
   // REQUIRES: !IsReplicated() && !IsTuple()
   const TileAssignment& tile_assignment() const {
     CHECK(!IsTuple());
+    // LOG(INFO) << "tile_assignment() called: " << this->ToString();
+    CHECK(!UseNamedShardingLeaf());
+
     return tile_assignment_;
   }
 
