@@ -1879,7 +1879,7 @@ message ExecutionOptions {
 // Serialization of HloModuleConfig. See the C++ class definition for
 // descriptions of each field.
 // There are no guarantees of backwards or forwards compatibility.
-// Next id: 43.
+// Next id: 44.
 message HloModuleConfigProto {
   enum FusionConfigCollection {
     OFF = 0;       // Do not collect configuration.
@@ -1947,6 +1947,7 @@ message HloModuleConfigProto {
   ScheduleConfigProto schedule_config = 41;
   // Number of devices in a fast-interconnect domain.
   int64 partition_size = 42;
+  int64 page_siz_kib = 43;
 }
 
 message HloModuleProtoWithConfig {
