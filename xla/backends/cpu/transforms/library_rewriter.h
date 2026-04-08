@@ -99,7 +99,7 @@ class LibraryRewriter : public HloModulePass {
   // Adds all immediate neighbors (parents and children) of `instr` that are
   // eligible for fusion to `queue`.
   void AddFusionCandidates(
-      HloInstruction* fusion, HloInstruction* instr, FusionDirection dir,
+      HloInstruction* fusion, HloInstruction* instr,
       std::queue<std::pair<HloInstruction*, FusionDirection>>& queue);
 
   // Merges two fusions `main` and `neighbor` together. `main` is the current
@@ -117,6 +117,9 @@ class LibraryRewriter : public HloModulePass {
 
   // Fuses as many neighbors around `fusion` as possible
   absl::Status FuseNeighbors(HloFusionInstruction* fusion, LibraryMatcher* lib);
+
+  // Removes broadcasts from the end of a fusion.
+  absl::Status RemoveTrailingBroadcasts(HloFusionInstruction* fusion);
 
   // Finds and creates fusions in the given computation.
   absl::StatusOr<bool> ProcessComputation(HloComputation* computation);

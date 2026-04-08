@@ -178,28 +178,25 @@ absl::StatusOr<LibraryMatcher*> LibraryRewriter::ChooseLibrary(
 }
 
 void LibraryRewriter::AddFusionCandidates(
-    HloInstruction* fusion, HloInstruction* instr, FusionDirection dir,
+    HloInstruction* fusion, HloInstruction* instr,
     std::queue<std::pair<HloInstruction*, FusionDirection>>& queue) {
-  // Don't add anything that has already been fused or require multi-output
-  // fusion support. (We don't support that yet.)
-  if (dir == FusionDirection::kUp || dir == FusionDirection::kBoth) {
-    for (HloInstruction* operand : instr->operands()) {
-      if (!fused_.contains(operand) &&
-          absl::c_all_of(operand->users(), [&](HloInstruction* user) {
-            return user == fusion || user == instr;
-          })) {
-        queue.push(std::make_pair(operand, FusionDirection::kUp));
-      }
+  // Check operands to grow "Up".
+  for (HloInstruction* operand : instr->operands()) {
+    if (!fused_.contains(operand) &&
+        absl::c_all_of(operand->users(), [&](HloInstruction* user) {
+          return user == fusion || user == instr || fused_.contains(user);
+        })) {
+      queue.push(std::make_pair(operand, FusionDirection::kUp));
     }
   }
-  // When fusing down, we can only have one user without multi-output support.
-  if (instr->user_count() != 1) {
-    return;
-  }
-  HloInstruction* user = instr->users().front();
-  if ((dir == FusionDirection::kDown || dir == FusionDirection::kBoth) &&
-      !fused_.contains(user)) {
-    queue.push(std::make_pair(user, FusionDirection::kDown));
+
+  // Check users to grow "Down". When fusing down, we can only have one user
+  // without multi-output support.
+  if (instr->user_count() == 1) {
+    HloInstruction* user = instr->users().front();
+    if (!fused_.contains(user)) {
+      queue.push(std::make_pair(user, FusionDirection::kDown));
+    }
   }
 }
 
@@ -212,8 +209,7 @@ absl::StatusOr<HloFusionInstruction*> LibraryRewriter::MergeFusionInstructions(
     main->MergeFusionInstruction(neighbor);
     TF_RETURN_IF_ERROR(main->parent()->RemoveInstruction(neighbor));
     return main;
-  }
-  if (dir == FusionDirection::kDown) {
+  } else if (dir == FusionDirection::kDown) {
     neighbor->MergeFusionInstruction(main);
     TF_RETURN_IF_ERROR(neighbor->parent()->RemoveInstruction(main));
     return neighbor;
@@ -247,12 +243,21 @@ absl::Status LibraryRewriter::FuseNeighbors(HloFusionInstruction* fusion,
   // This queue only tracks original HLO instructions in the parent computation,
   // not any new instructions created during the fusion process.
   std::queue<std::pair<HloInstruction*, FusionDirection>> frontier;
-  AddFusionCandidates(fusion, fusion, FusionDirection::kBoth, frontier);
+  AddFusionCandidates(fusion, fusion, frontier);
+
+  absl::flat_hash_set<HloInstruction*> visited;
+  visited.insert(fusion);
 
   // BFS and fuse as many neighbors as possible.
   while (!frontier.empty()) {
     auto [instr, dir] = frontier.front();
     frontier.pop();
+
+    if (visited.contains(instr)) {
+      continue;
+    }
+    visited.insert(instr);
+
     if (dir != FusionDirection::kUp && dir != FusionDirection::kDown) {
       return InvalidArgument("Invalid travel direction: %s",
                              FusionDirectionToString(dir));
@@ -277,13 +282,45 @@ absl::Status LibraryRewriter::FuseNeighbors(HloFusionInstruction* fusion,
 
     // Add neighbors to the frontier.
     fused_.insert(instr);
-    AddFusionCandidates(fusion, instr, dir, frontier);
+    AddFusionCandidates(fusion, instr, frontier);
 
     // Fuse `instr` into `fusion` according to the travel direction.
     TF_ASSIGN_OR_RETURN(HloInstruction * new_instr,
                         GrowFusion(fusion, instr, dir));
     TF_RETURN_IF_ERROR(
         InsertConvertIfNecessary(new_instr, lib->LibraryOpOutputType(instr)));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status LibraryRewriter::RemoveTrailingBroadcasts(
+    HloFusionInstruction* fusion) {
+  if (!fusion->has_called_computations()) {
+    return absl::OkStatus();
+  }
+  // Maybe this should also remove trailing converts that convert to a bigger
+  // type? It would be better to fuse those with their consumer... but it might
+  // not fuse with anything either.
+  HloComputation* fused_comp = fusion->fused_instructions_computation();
+  while (fused_comp->root_instruction()->opcode() == HloOpcode::kBroadcast) {
+    HloInstruction* root = fused_comp->root_instruction();
+    HloInstruction* operand = root->mutable_operand(0);
+
+    // Update the fusion root and shape.
+    fused_comp->set_root_instruction(operand, /*accept_different_shape=*/true);
+    Shape old_shape = fusion->shape();
+    *fusion->mutable_shape() = operand->shape();
+
+    // Create a new instruction in the parent computation.
+    HloInstruction* new_instr = fusion->parent()->AddInstruction(
+        HloInstruction::CreateBroadcast(old_shape, fusion, root->dimensions()));
+
+    // Replace all uses of fusion with the new instruction, except the new
+    // instruction itself.
+    TF_RETURN_IF_ERROR(fusion->ReplaceAllUsesWithDifferentShape(new_instr));
+    TF_RETURN_IF_ERROR(new_instr->ReplaceOperandWithDifferentShape(0, fusion));
+
+    TF_RETURN_IF_ERROR(fused_comp->RemoveInstruction(root));
   }
   return absl::OkStatus();
 }
@@ -338,6 +375,9 @@ absl::StatusOr<bool> LibraryRewriter::ProcessComputation(
     // Fuse as many neighbors as as we can.
     if (lib->ShouldGrowFusion(centroid)) {
       TF_RETURN_IF_ERROR(FuseNeighbors(fusion, lib));
+
+      // Remove trailing broadcasts.
+      TF_RETURN_IF_ERROR(RemoveTrailingBroadcasts(fusion));
     }
   }
   return !fused_.empty();

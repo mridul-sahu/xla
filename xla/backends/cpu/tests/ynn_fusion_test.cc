@@ -176,8 +176,8 @@ TEST_P(YnnFusionTest, Slice) {
 }
 
 TEST_P(YnnFusionTest, Iota) {
-  if (GetParam().in_dtype == "bf16") {
-    GTEST_SKIP() << "Iota not supported for bf16";
+  if (GetParam().in_dtype == "bf16" || GetParam().in_dtype == "f64") {
+    GTEST_SKIP() << "Iota not supported for " << GetParam().in_dtype;
   }
   constexpr absl::string_view kModuleStr = R"(
     HloModule iota
@@ -293,10 +293,12 @@ TEST_P(YnnFusionTest, DotWithConstant) {
 
   RunTest(kModuleStr);
 }
+
 std::vector<YnnFusionTestParams> GetSameTypeTestCases() {
   return std::vector<YnnFusionTestParams>({
       YnnFusionTestParams{"bf16", "bf16"},
       YnnFusionTestParams{"f32", "f32"},
+      YnnFusionTestParams{"f64", "f64"},
   });
 }
 
@@ -313,6 +315,32 @@ INSTANTIATE_TEST_SUITE_P(
     AddWithBroadcastTest::Name);
 
 using YnnFusionReduceWindowTest = YnnFusionTest;
+
+TEST_P(YnnFusionReduceWindowTest, ReduceWindowMax) {
+  constexpr absl::string_view kModuleStr = R"(
+    HloModule reduce_window_max
+
+    %max {
+      %lhs = $dtype[] parameter(0)
+      %rhs = $dtype[] parameter(1)
+      ROOT %max = $dtype[] maximum(%lhs, %rhs)
+    }
+
+    ynn_fusion {
+      %param_0 = $dtype[3,2,4,6] parameter(0)
+      %constant.0 = $dtype[] constant(-inf)
+      ROOT %reduce_window_max.0 = $dtype[4,2,4,8] reduce-window(%param_0, %constant.0),
+        window={size=1x1x2x1 stride=1x2x2x1 pad=0_1x1_0x2_3x0_2}, to_apply=%max
+    }
+
+    ENTRY entry {
+      %p0 = $dtype[3,2,4,6] parameter(0)
+      ROOT %fusion = $dtype[4,2,4,8] fusion(%p0), kind=kCustom, calls=ynn_fusion,
+        backend_config={"fusion_config": {kind: "__ynn_fusion"}}
+    })";
+
+  RunTest(kModuleStr);
+}
 
 TEST_P(YnnFusionReduceWindowTest, ReduceWindow) {
   constexpr absl::string_view kModuleStr = R"(
@@ -419,7 +447,9 @@ TEST_P(YnnFusionReduceWindowTest, ConvertReduce) {
 
 INSTANTIATE_TEST_SUITE_P(YnnFusionReduceWindowTestInstantiation,
                          YnnFusionReduceWindowTest,
-                         ::testing::Values(YnnFusionTestParams{"f32", "f32"}),
+                         ::testing::Values(YnnFusionTestParams{"bf16", "bf16"},
+                                           YnnFusionTestParams{"f32", "f32"},
+                                           YnnFusionTestParams{"f64", "f64"}),
                          YnnFusionTest::Name);
 
 }  // namespace

@@ -46,7 +46,9 @@ class YnnMatcher : public LibraryMatcher {
               HloOpcode::kDot,          HloOpcode::kReduce,
               HloOpcode::kReduceWindow, HloOpcode::kConstant,
               HloOpcode::kConvolution,  HloOpcode::kReshape,
-              HloOpcode::kBitcast};
+              HloOpcode::kBitcast,      HloOpcode::kBroadcast,
+              HloOpcode::kTranspose,    HloOpcode::kSlice,
+              HloOpcode::kPad,          HloOpcode::kIota};
           for (const auto& [op, _] : GetYnnUnaryOpMap()) {
             supported_ops.insert(op);
           }
@@ -67,7 +69,7 @@ class YnnMatcher : public LibraryMatcher {
     }
     if (instr->opcode() == HloOpcode::kReduce ||
         instr->opcode() == HloOpcode::kReduceWindow) {
-      return IsReduceLikeOpOffloadedToYnn(instr);
+      return IsReduceLikeOpSupportedByYnn(instr);
     }
     if (instr->opcode() == HloOpcode::kConvolution) {
       return IsConvolutionOpSupportedByYnn(instr);
@@ -75,22 +77,29 @@ class YnnMatcher : public LibraryMatcher {
     if (instr->IsConstant()) {
       return IsConstantSupportedByYnn(instr);
     }
-    // TODO(b/441837668): Need to get the reduction performance right before
-    // enabling fusions. Fusions make performance analysis quite challenging.
-    if (fuse_reduce_) {
-      if (instr->opcode() == HloOpcode::kReshape) {
-        return IsReshapeOpSupportedByYnn(instr);
-      }
-      if (instr->opcode() == HloOpcode::kBitcast) {
-        return IsBitcastOpSupportedByYnn(instr);
-      }
-      if (instr->opcode() == HloOpcode::kConvert) {
-        return IsElementwiseOpSupportedByYnn(instr);
-      }
-      return false;
+    if (instr->opcode() == HloOpcode::kIota) {
+      return IsIotaSupportedByYnn(instr);
     }
     if (instr->IsElementwise()) {
       return IsElementwiseOpSupportedByYnn(instr);
+    }
+    if (instr->opcode() == HloOpcode::kReshape) {
+      return IsReshapeOpSupportedByYnn(instr);
+    }
+    if (instr->opcode() == HloOpcode::kBitcast) {
+      return IsBitcastOpSupportedByYnn(instr);
+    }
+    if (instr->opcode() == HloOpcode::kBroadcast) {
+      return IsBroadcastOpSupportedByYnn(instr);
+    }
+    if (instr->opcode() == HloOpcode::kTranspose) {
+      return IsTransposeOpSupportedByYnn(instr);
+    }
+    if (instr->opcode() == HloOpcode::kSlice) {
+      return IsSliceOpSupportedByYnn(instr);
+    }
+    if (instr->opcode() == HloOpcode::kPad) {
+      return IsPadOpSupportedByYnn(instr);
     }
     return false;
   }
