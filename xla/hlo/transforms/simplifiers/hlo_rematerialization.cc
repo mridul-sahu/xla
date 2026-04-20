@@ -1736,7 +1736,7 @@ absl::StatusOr<int64_t> RematerializeInstructions(
       continue;
     }
 
-    HloCloneContext context(computation->parent());
+    HloCloneContext context(computation->parent(), "clone");
     HloInstruction* remat =
         computation->AddInstruction(best->Clone(/*suffix=*/"remat", &context));
     // Call the callback on the original and rematerialized instruction.
