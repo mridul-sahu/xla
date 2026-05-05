@@ -321,6 +321,7 @@ cc_library(
         "//xla/hlo/builder:xla_computation",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/translate:register",
+        "//xla/mlir_hlo",
         "//xla/mlir_hlo:unregistered_attributes",
         "//xla/service:hlo_module_config",
         "//xla/service:hlo_proto_cc",

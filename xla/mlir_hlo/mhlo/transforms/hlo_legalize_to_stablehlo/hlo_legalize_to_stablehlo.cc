@@ -40,6 +40,7 @@ limitations under the License.
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "stablehlo/dialect/StablehloOps.h"
+#include "utils/unregistered_attributes.h"
 
 namespace mlir {
 namespace stablehlo {
@@ -249,6 +250,9 @@ stablehlo::ResultAccuracyMode convertResultAccuracyMode(
 }
 
 Attribute convertAttr(Attribute hloAttr) {
+  if (auto attr = mlir::dyn_cast<mhlo::OriginalValueAttr>(hloAttr)) {
+    return attr;
+  }
   // Handle MHLO attributes.
   // The logic that handles attributes from other dialects (e.g. builtin
   // attributes) lives below.

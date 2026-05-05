@@ -323,6 +323,16 @@ LogicalResult TypeExtensionsAttr::verifyEncoding(
       getBounds(), RankedTensorType::get(shape, elementType), emitError);
 }
 
+LogicalResult OriginalValueAttr::verify(
+    ::llvm::function_ref<::mlir::InFlightDiagnostic()> emitError,
+    bool is_synthetic_call,
+    ::llvm::ArrayRef<OriginalValueElementAttr> elements) {
+  if (is_synthetic_call && !elements.empty()) {
+    return emitError() << "expected empty elements for a synthetic call";
+  }
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ReduceScatterOp
 //===----------------------------------------------------------------------===//
