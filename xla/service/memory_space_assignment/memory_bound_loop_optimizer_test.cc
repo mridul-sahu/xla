@@ -59,10 +59,10 @@ limitations under the License.
 #include "xla/shape_util.h"
 #include "xla/status_macros.h"
 #include "xla/tsl/lib/core/status_test_util.h"
+#include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
 #include "xla/xla_data.pb.h"
 #include "tsl/platform/errors.h"
-#include "tsl/platform/statusor.h"
 #include "tsl/platform/test.h"
 
 namespace xla {
@@ -298,12 +298,12 @@ class MemoryBoundLoopOptimizerTest : public HloHardwareIndependentTestBase {
             "HloCostAnalysis",
             CreateHloCostAnalysisCalculator(*hlo_cost_analysis_wrapper_),
             /*enable_cache=*/false));
+    TF_ASSIGN_OR_RETURN(alias_analysis_,
+                        HloAliasAnalysis::Run(module, &alias_info_));
     TF_ASSIGN_OR_RETURN(
         cost_analysis_,
         CostAnalysis::Create(*op_cost_manager_, cost_analysis_options_,
-                             &alias_info_, *module));
-    TF_ASSIGN_OR_RETURN(alias_analysis_,
-                        HloAliasAnalysis::Run(module, &alias_info_));
+                             &alias_info_, *module, alias_analysis_.get()));
     TF_ASSIGN_OR_RETURN(live_range_,
                         HloLiveRange::Run(module->schedule(), *alias_analysis_,
                                           module->entry_computation()));
