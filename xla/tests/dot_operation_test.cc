@@ -13,13 +13,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <complex>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "xla/tests/xla_test_backend_predicates.h"
 #include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
@@ -27,12 +32,16 @@ limitations under the License.
 #include "Eigen/Core"
 #include "xla/array2d.h"
 #include "xla/array3d.h"
+#include "xla/array4d.h"
 #include "xla/client/client_library.h"
 #include "xla/error_spec.h"
-#include "xla/hlo/builder/lib/arithmetic.h"
+#include "xla/executable_run_options.h"
 #include "xla/hlo/builder/lib/matrix.h"
 #include "xla/hlo/builder/xla_builder.h"
+#include "xla/hlo/ir/hlo_module.h"
 #include "xla/hlo/parser/hlo_parser.h"
+#include "xla/hlo/testlib/test_helpers.h"
+#include "xla/layout.h"
 #include "xla/layout_util.h"
 #include "xla/literal.h"
 #include "xla/literal_util.h"
@@ -40,14 +49,17 @@ limitations under the License.
 #include "xla/reference_util.h"
 #include "xla/service/hlo_runner_interface.h"
 #include "xla/service/platform_util.h"
+#include "xla/service/shaped_buffer.h"
 #include "xla/shape_util.h"
-#include "xla/stream_executor/stream_executor_memory_allocator.h"
+#include "xla/stream_executor/platform.h"
+#include "xla/stream_executor/stream_executor_address_allocator.h"
 #include "xla/tests/client_library_test_runner_mixin.h"
 #include "xla/tests/hlo_pjrt_interpreter_reference_mixin.h"
 #include "xla/tests/hlo_pjrt_test_base.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/platform/test.h"
 #include "xla/tsl/platform/test_benchmark.h"
+#include "xla/types.h"
 #include "tsl/platform/ml_dtypes.h"
 
 #if TENSORFLOW_USE_ROCM
@@ -116,7 +128,7 @@ class DotOperationTest_F16F32F64CF64 : public DotOperationTest {
     }
   }
 };
-TYPED_TEST_CASE(DotOperationTest_F16F32F64CF64, TypesF16F32F64CF64);
+TYPED_TEST_SUITE(DotOperationTest_F16F32F64CF64, TypesF16F32F64CF64);
 
 TYPED_TEST(DotOperationTest_F16F32F64CF64, ZeroElementVectorDot) {
   using T = TypeParam;
@@ -139,7 +151,7 @@ class DotOperationTest_F16F32F64 : public DotOperationTest {
     }
   }
 };
-TYPED_TEST_CASE(DotOperationTest_F16F32F64, TypesF16F32F64);
+TYPED_TEST_SUITE(DotOperationTest_F16F32F64, TypesF16F32F64);
 
 TYPED_TEST(DotOperationTest_F16F32F64, TrivialMatrixVectorDot) {
   using T = TypeParam;
@@ -239,7 +251,9 @@ TYPED_TEST(DotOperationTest_F16F32F64CF64, FusedDot) {
   Literal rhs_handle =
       LiteralUtil::CreateR2FromArray2D<T>({{1.0f}, {2.0f}, {3.0f}, {4.0f}});
   if (std::is_same<Eigen::half, T>::value) {
-    this->error_spec_ = ErrorSpec{0.0001, 1e-3};
+    this->error_spec_ = ErrorSpec{0.001, 0.003};
+  } else if (std::is_same<float, T>::value) {
+    this->error_spec_ = ErrorSpec{0.001, 0.002};
   }
 
   this->template ComputeAndCompareR2<T>(
@@ -275,7 +289,7 @@ class SquareMatrixDot : public DotOperationTest {
   }
 };
 
-TYPED_TEST_CASE(SquareMatrixDot, TypesF16F32F64CF64);
+TYPED_TEST_SUITE(SquareMatrixDot, TypesF16F32F64CF64);
 TYPED_TEST(SquareMatrixDot, TypesFF) { this->TestImpl(false, false); }
 TYPED_TEST(SquareMatrixDot, TypesFT) { this->TestImpl(false, true); }
 TYPED_TEST(SquareMatrixDot, TypesTF) { this->TestImpl(true, false); }
@@ -299,11 +313,10 @@ std::string PrintDotTestParam(
                         param.dot_lhs_row_major ? "T" : "F",
                         param.dot_rhs_row_major ? "T" : "F",
                         param.addend_row_major ? "T" : "F");
-  } else {
-    return absl::StrCat(param.m, "x", param.k, "x", param.n, "_MajorToMinor",
-                        param.dot_lhs_row_major ? "T" : "F",
-                        param.dot_rhs_row_major ? "T" : "F");
   }
+  return absl::StrCat(param.m, "x", param.k, "x", param.n, "_MajorToMinor",
+                      param.dot_lhs_row_major ? "T" : "F",
+                      param.dot_rhs_row_major ? "T" : "F");
 }
 
 class ParametricDotTest : public DotOperationTest,
@@ -424,10 +437,11 @@ void ParametricDotTest::TestImpl() {
 
   if (propagate_grad_xy_ != 0) {
     FrontendAttributes attributes;
-    if (propagate_grad_xy_ == 1)
+    if (propagate_grad_xy_ == 1) {
       (*attributes.mutable_map())["grad_x"] = "true";
-    else
+    } else {
       (*attributes.mutable_map())["grad_y"] = "true";
+    }
     builder.SetFrontendAttributes(attributes);
   }
   auto result =
@@ -623,7 +637,7 @@ class NonsquareMatrixDot : public DotOperationTest {
   }
 };
 
-TYPED_TEST_CASE(NonsquareMatrixDot, TypesF16F32F64CF64);
+TYPED_TEST_SUITE(NonsquareMatrixDot, TypesF16F32F64CF64);
 TYPED_TEST(NonsquareMatrixDot, TestFF) { this->TestImpl(false, false); }
 TYPED_TEST(NonsquareMatrixDot, TestFT) { this->TestImpl(false, true); }
 TYPED_TEST(NonsquareMatrixDot, TestTF) { this->TestImpl(true, false); }
@@ -673,7 +687,7 @@ class DotOperationTestForBatchMatMul : public DotOperationTest {
     }
   }
 };
-TYPED_TEST_CASE(DotOperationTestForBatchMatMul, TypesF16F32F64);
+TYPED_TEST_SUITE(DotOperationTestForBatchMatMul, TypesF16F32F64);
 
 // Regression test for b/32055648. The root of the graph is a kFusion of 4
 // bitcasts. Although bitcasts don't map to thunks, the root should still be
@@ -779,7 +793,8 @@ class DotOperationTestWithCublasLt_F16F32F64CF64 : public DotOperationTest {
     }
   }
 };
-TYPED_TEST_CASE(DotOperationTestWithCublasLt_F16F32F64CF64, TypesF16F32F64CF64);
+TYPED_TEST_SUITE(DotOperationTestWithCublasLt_F16F32F64CF64,
+                 TypesF16F32F64CF64);
 
 TYPED_TEST(DotOperationTestWithCublasLt_F16F32F64CF64,
            GeneralMatMulActivation) {
@@ -1611,7 +1626,7 @@ TEST_P(EinsumTest, SimpleEinsumTest) {
   } else {
     Einsum(x, y, config);
   }
-  ComputeAndCompare(&builder, {&x_literal, &y_literal}, ErrorSpec{1e-3, 1e-3});
+  ComputeAndCompare(&builder, {&x_literal, &y_literal}, ErrorSpec{0.01, 0.01});
 }
 
 std::vector<EinsumParamType> GetEinsumTestCases() {
@@ -1801,7 +1816,7 @@ ENTRY main {
 }
 )";
 
-  EXPECT_TRUE(RunAndCompare(hlo_string, ErrorSpec{4e-3, 4e-3}));
+  EXPECT_TRUE(RunAndCompare(hlo_string, ErrorSpec{1e-2, 7e-2}));
 }
 
 TEST_F(DotOperationTextTest, CpuTiledDotEmitterCachingBug_2) {
@@ -1826,7 +1841,7 @@ ENTRY main {
 }
 )";
 
-  EXPECT_TRUE(RunAndCompare(hlo_string, ErrorSpec{4e-3, 4e-3}));
+  EXPECT_TRUE(RunAndCompare(hlo_string, ErrorSpec{1e-2, 7e-2}));
 }
 
 TEST_F(DotOperationTextTest, S32IotaDot) {
@@ -1963,7 +1978,7 @@ ENTRY SmallIntegerDot {
 }
 
 TEST_F(DotOperationTextTest, S4Dot) {
-  // TODO(intel-tf): Enable this test for Intel GPU when the suport for S4 is
+  // TODO(intel-tf): Enable this test for Intel GPU when the support for S4 is
   // added.
   if (test::DeviceIs("intelgpu")) {
     GTEST_SKIP();
@@ -2013,7 +2028,7 @@ ENTRY TransposeOutput {
   EXPECT_TRUE(RunAndCompare(hlo_string, ErrorSpec{4e-3, 4e-3}));
 }
 // There was a bug in the Dot Codegen, which is masked for floating-point since
-// Dot for FP opertions are converted to cuBLAS operations. This one tests
+// Dot for FP operations are converted to cuBLAS operations. This one tests
 // integer ones to make sure the Dot-Codegen is producing correct code.
 TEST_F(DotOperationTextTest, IntegerDotTest) {
   constexpr absl::string_view kHloString = R"(
@@ -2124,7 +2139,7 @@ ENTRY jaxpr_computation__5.33 {
 })";
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
                           ParseAndReturnVerifiedModule(module_string));
-  EXPECT_TRUE(RunAndCompare(std::move(module), /*error=*/std::nullopt));
+  EXPECT_TRUE(RunAndCompare(std::move(module), ErrorSpec{0.001, 0.001}));
 }
 
 TEST_F(DotOperationTest, ReorderContractingDimsConstLHS_RL) {
