@@ -24,11 +24,7 @@ limitations under the License.
 #include "xla/stream_executor/device_address.h"
 #include "xla/stream_executor/gpu/gpu_kernel_registry.h"
 #include "xla/stream_executor/kernel_spec.h"
-
-#if NCCL_VERSION_CODE >= 22800
-// Device initiated collective operations were added in NCCL 2.28.0.
 #include "third_party/nccl/nccl_device.h"
-#endif  // NCCL_VERSION_CODE >= 22800
 
 namespace xla::gpu {
 

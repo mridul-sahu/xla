@@ -48,11 +48,7 @@ limitations under the License.
 
 // Include NCCL after XLA headers.
 #include "third_party/nccl/nccl.h"
-
-#if NCCL_VERSION_CODE >= 22800
-// Device initiated collective operations were added in NCCL 2.28.0.
 #include "third_party/nccl/nccl_device.h"  // IWYU pragma: keep
-#endif                                          // NCCL_VERSION_CODE >= 22800
 
 namespace xla::gpu {
 
