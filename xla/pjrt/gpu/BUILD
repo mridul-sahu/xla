@@ -473,10 +473,6 @@ xla_test(
         "gpu": ["multi_gpu"],
     },
     backends = ["gpu"],
-    tags = [
-        "no_oss",
-        "notap",
-    ],
     deps = [
         ":se_gpu_pjrt_client",
         "//xla/pjrt:pjrt_client_test_common",
