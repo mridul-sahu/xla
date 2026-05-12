@@ -427,6 +427,66 @@ TEST_F(LayoutUtilTest, ValidateLayout_TupleSubshapesWithMissingLayouts) {
                         "contains 3 elements, but shape has 1 dimensions"));
 }
 
+TEST_F(LayoutUtilTest, ValidateLayout_ValidSplitConfig) {
+  Shape shape = ShapeUtil::MakeShape(F32, {150, 200, 100});
+  *shape.mutable_layout() = LayoutUtil::MakeLayout({0, 1, 2})
+                                .add_split_configs(SplitConfig(0, {30}))
+                                .add_split_configs(SplitConfig(1, {40, 130}));
+  auto status = LayoutUtil::ValidateLayoutInShape(shape);
+  EXPECT_TRUE(status.ok()) << status.ToString();
+}
+
+TEST_F(LayoutUtilTest, ValidateLayout_InvalidSplitConfigDimensionOutOfBounds) {
+  Shape shape = ShapeUtil::MakeShape(F32, {150, 200, 100});
+  *shape.mutable_layout() =
+      LayoutUtil::MakeLayout({0, 1, 2}).add_split_configs(SplitConfig(3, {30}));
+  auto status = LayoutUtil::ValidateLayoutInShape(shape);
+  EXPECT_FALSE(status.ok());
+  EXPECT_THAT(status.message(),
+              HasSubstr("split config has out-of-bounds physical dimension"));
+}
+
+TEST_F(LayoutUtilTest, ValidateLayout_InvalidSplitConfigDuplicateDimension) {
+  Shape shape = ShapeUtil::MakeShape(F32, {150, 200, 100});
+  *shape.mutable_layout() = LayoutUtil::MakeLayout({0, 1, 2})
+                                .add_split_configs(SplitConfig(0, {30}))
+                                .add_split_configs(SplitConfig(0, {40}));
+  auto status = LayoutUtil::ValidateLayoutInShape(shape);
+  EXPECT_FALSE(status.ok());
+  EXPECT_THAT(status.message(),
+              HasSubstr("split config has duplicate physical dimension"));
+}
+
+TEST_F(LayoutUtilTest, ValidateLayout_InvalidSplitConfigIndicesNotIncreasing) {
+  Shape shape = ShapeUtil::MakeShape(F32, {150, 200, 100});
+  *shape.mutable_layout() = LayoutUtil::MakeLayout({0, 1, 2}).add_split_configs(
+      SplitConfig(1, {40, 30}));
+  auto status = LayoutUtil::ValidateLayoutInShape(shape);
+  EXPECT_FALSE(status.ok());
+  EXPECT_THAT(status.message(), HasSubstr("split config split indices must be "
+                                          "strictly increasing and positive"));
+}
+
+TEST_F(LayoutUtilTest, ValidateLayout_InvalidSplitConfigIndicesNotPositive) {
+  Shape shape = ShapeUtil::MakeShape(F32, {150, 200, 100});
+  *shape.mutable_layout() = LayoutUtil::MakeLayout({0, 1, 2}).add_split_configs(
+      SplitConfig(1, {0, 40}));
+  auto status = LayoutUtil::ValidateLayoutInShape(shape);
+  EXPECT_FALSE(status.ok());
+  EXPECT_THAT(status.message(), HasSubstr("split config split indices must be "
+                                          "strictly increasing and positive"));
+}
+
+TEST_F(LayoutUtilTest, ValidateLayout_InvalidSplitConfigIndicesOutOfBounds) {
+  Shape shape = ShapeUtil::MakeShape(F32, {150, 200, 100});
+  *shape.mutable_layout() = LayoutUtil::MakeLayout({0, 1, 2}).add_split_configs(
+      SplitConfig(1, {40, 200}));
+  auto status = LayoutUtil::ValidateLayoutInShape(shape);
+  EXPECT_FALSE(status.ok());
+  EXPECT_THAT(status.message(),
+              HasSubstr("split config split index is out of bounds"));
+}
+
 TEST_F(LayoutUtilTest, MoveDimToMajor) {
   const Layout layout = LayoutUtil::MakeLayout({2, 1, 0});
   Layout new_layout = LayoutUtil::MoveDimToMajor(layout, 0);
