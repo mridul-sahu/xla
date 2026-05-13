@@ -546,6 +546,23 @@ uint64_t HloModule::ToFingerprint(
   return printer.ToFingerprint();
 }
 
+int64_t HloModule::InternMetadataPayload(absl::string_view payload) {
+  auto it = metadata_payloads_map_.find(payload);
+  if (it != metadata_payloads_map_.end()) {
+    return it->second;
+  }
+  int64_t id = metadata_payloads_.size();
+  metadata_payloads_.push_back(std::string(payload));
+  metadata_payloads_map_.emplace(metadata_payloads_.back(), id);
+  return id;
+}
+
+const std::string& HloModule::GetMetadataPayload(int64_t id) const {
+  CHECK_GE(id, 0);
+  CHECK_LT(id, metadata_payloads_.size());
+  return metadata_payloads_[id];
+}
+
 void HloModule::ToProto(HloModuleProto* proto) const {
   proto->set_id(unique_id_);
   proto->set_name(name_);
@@ -622,6 +639,29 @@ void HloModule::ToProto(HloModuleProto* proto) const {
 
   if (!config().device_type().empty()) {
     proto->set_device_type(config().device_type());
+  }
+
+  int64_t base_offset = proto->payloads_size();
+  for (const std::string& payload : metadata_payloads_) {
+    proto->add_payloads(payload);
+  }
+  for (HloComputationProto& computation_proto :
+       *proto->mutable_computations()) {
+    for (HloInstructionProto& instruction_proto :
+         *computation_proto.mutable_instructions()) {
+      if (instruction_proto.has_metadata() &&
+          instruction_proto.metadata().has_interned_metadata_payload()) {
+        if (instruction_proto.metadata().interned_metadata_payload().has_id() &&
+            instruction_proto.metadata().interned_metadata_payload().id() > 0) {
+          instruction_proto.mutable_metadata()
+              ->mutable_interned_metadata_payload()
+              ->set_id(instruction_proto.metadata()
+                           .interned_metadata_payload()
+                           .id() +
+                       base_offset);
+        }
+      }
+    }
   }
 }
 
@@ -1007,6 +1047,24 @@ absl::StatusOr<std::unique_ptr<HloModule>> HloModule::CreateFromProto(
   }
 
   DeduplicateOriginalValues(module.get());
+
+  for (HloComputation* computation : module->computations()) {
+    for (HloInstruction* instruction : computation->instructions()) {
+      if (instruction->metadata().has_interned_metadata_payload() &&
+          instruction->metadata().interned_metadata_payload().has_id()) {
+        int64_t old_id =
+            instruction->metadata().interned_metadata_payload().id();
+        if (old_id > 0 && old_id < proto.payloads_size()) {
+          int64_t new_id =
+              module->InternMetadataPayload(proto.payloads(old_id));
+          instruction->mutable_metadata()
+              .mutable_interned_metadata_payload()
+              ->set_id(new_id);
+        }
+      }
+    }
+  }
+
   return module;
 }
 

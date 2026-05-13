@@ -813,6 +813,12 @@ class HloModule {
     return cross_program_prefetches_;
   }
 
+  // Interns a metadata payload string, returning a deduplicated ID.
+  int64_t InternMetadataPayload(absl::string_view payload);
+
+  // Retrieves a metadata payload string by ID.
+  const std::string& GetMetadataPayload(int64_t id) const;
+
   const HloModuleMetadata& metadata() const { return metadata_; }
   HloModuleMetadata* metadata() { return &metadata_; }
 
@@ -1008,6 +1014,10 @@ class HloModule {
 
   // Metadata for this module, such as its canonical id and the HLO passes run.
   HloModuleMetadata metadata_;
+
+  // Metadata payloads and deduplication map.
+  std::vector<std::string> metadata_payloads_{""};
+  absl::flat_hash_map<std::string, int64_t> metadata_payloads_map_{{"", 0}};
 
   // True if the module contains dynamic computation.
   bool is_dynamic_ = false;

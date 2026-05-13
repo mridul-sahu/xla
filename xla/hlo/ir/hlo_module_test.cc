@@ -1625,5 +1625,39 @@ TEST(HloModuleTest, ModuleLevelCacheAPIs) {
   EXPECT_EQ(module.GetCacheEntry<TestCacheEntry>(key1)->value(), 100);
 }
 
+TEST(HloModuleTest, MetadataInterningDeduplicationAndRoundtrip) {
+  HloModule m("test_module", HloModuleConfig());
+  int64_t id1 = m.InternMetadataPayload("tokamax:{\"foo\": 1}");
+  int64_t id2 = m.InternMetadataPayload("tokamax:{\"foo\": 1}");
+  int64_t id3 = m.InternMetadataPayload("tokamax:{\"bar\": 2}");
+
+  EXPECT_EQ(id1, id2);
+  EXPECT_NE(id1, id3);
+  EXPECT_EQ(m.GetMetadataPayload(id1), "tokamax:{\"foo\": 1}");
+  EXPECT_EQ(m.GetMetadataPayload(id3), "tokamax:{\"bar\": 2}");
+
+  HloComputation::Builder builder("comp");
+  Shape shape = ShapeUtil::MakeShape(F32, {2, 3});
+  HloInstruction* p0 =
+      builder.AddInstruction(HloInstruction::CreateParameter(0, shape, "p0"));
+  OpMetadata metadata;
+  metadata.mutable_interned_metadata_payload()->set_id(id1);
+  p0->set_metadata(metadata);
+
+  m.AddEntryComputation(builder.Build());
+
+  HloModuleProto proto = m.ToProto();
+  EXPECT_GT(proto.payloads_size(), std::max(id1, id3));
+
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> loaded,
+                          HloModule::CreateFromProto(proto, m.config()));
+  const HloInstruction* loaded_p0 =
+      loaded->entry_computation()->root_instruction();
+  EXPECT_TRUE(loaded_p0->has_interned_metadata());
+  EXPECT_EQ(loaded->GetMetadataPayload(
+                loaded_p0->metadata().interned_metadata_payload().id()),
+            "tokamax:{\"foo\": 1}");
+}
+
 }  // namespace
 }  // namespace xla

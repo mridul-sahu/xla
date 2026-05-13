@@ -120,6 +120,22 @@ HloInstructionProto ToProtoWithInlinedPayloads(HloInstructionProto proto,
       }
     }
   }
+  if (proto.has_metadata() &&
+      proto.metadata().has_interned_metadata_payload()) {
+    const Payload& payload = proto.metadata().interned_metadata_payload();
+    if (payload.has_id()) {
+      if (module != nullptr) {
+        const tsl::protobuf::RepeatedPtrField<std::string>& payloads =
+            module->payloads();
+        if (payload.id() >= 0 && payload.id() < payloads.size()) {
+          const std::string& payload_string = payloads.at(payload.id());
+          proto.mutable_metadata()
+              ->mutable_interned_metadata_payload()
+              ->set_value(payload_string);
+        }
+      }
+    }
+  }
   return proto;
 }
 
