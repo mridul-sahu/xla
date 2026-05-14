@@ -335,6 +335,38 @@ class CommonPjRtClient : public PjRtClient {
         "CrossHostReceiveBuffersInto is not implemented.");
   }
 
+  // CrossHostSendBuffers and CrossHostReceiveBuffers are part of the second
+  // cross-host transfers API.
+  absl::StatusOr<std::vector<Future<>>> CrossHostSendBuffers(
+      absl::Span<PjRtBuffer* const> buffers,
+      absl::Span<const GlobalDeviceId> dst_global_device_ids,
+      std::vector<CrossHostTransferKey> transfer_keys) override;
+
+  absl::StatusOr<std::vector<std::unique_ptr<PjRtBuffer>>>
+  CrossHostReceiveBuffers(
+      xla::PjRtDevice* device, absl::Span<const xla::Shape> shapes,
+      absl::Span<const GlobalDeviceId> src_global_device_ids,
+      std::vector<CrossHostTransferKey> transfer_keys) override;
+
+  // Similar to PjRtClient::CrossHost{Send/Receive}Buffers, but uses
+  // PjRtRawBuffer instead of PjRtBuffer.
+  // Takes in a vector of transfer dependencies and transfer specs, and launches
+  // the data transfers specified by the transfer specs so that they occur after
+  // all transfer dependencies are complete.
+  struct CrossHostTransferSpec {
+    GlobalDeviceId src_global_device_id;
+    GlobalDeviceId dst_global_device_id;
+    tsl::RCReference<PjRtRawBuffer> raw_buffer;
+  };
+
+  virtual absl::StatusOr<std::vector<PjRtDeviceEventRef>>
+  CrossHostTransferBuffers(
+      std::vector<PjRtDeviceEventRef> transfer_dependencies,
+      std::vector<CrossHostTransferSpec> transfer_specs) {
+    return absl::UnimplementedError(
+        "CrossHostTransferBuffers is not implemented.");
+  }
+
   static absl::Status PrepareArguments(
       const ExecuteOptions& options,
       absl::Span<PjRtBuffer* const> argument_handles,
