@@ -78,8 +78,8 @@ absl::StatusOr<llvm::Function*> BuildKernelPrototype(
     const LaunchDimensions& launch_dimensions, llvm::IRBuilderBase* builder);
 
 absl::StatusOr<llvm::Function*> RemoveUnusedTritonAbiArguments(
-    llvm::Module* llvm_module, IrEmitterContext& ir_emitter_context,
-    const std::string& sanitized_kernel_name, bool keep_scratch = false);
+    llvm::Module* llvm_module, const std::string& sanitized_kernel_name,
+    const std::string& sanitized_kernel_impl_name, bool keep_scratch = false);
 
 absl::Status AnnotateKernelLaunchDimensions(
     const se::DeviceDescription& device_info,
