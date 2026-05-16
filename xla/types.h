@@ -29,6 +29,8 @@ limitations under the License.
 namespace xla {
 
 using ::tsl::float4_e2m1fn;  // NOLINT(misc-unused-using-decls)
+using ::tsl::float6_e2m3fn;  // NOLINT(misc-unused-using-decls)
+using ::tsl::float6_e3m2fn;  // NOLINT(misc-unused-using-decls)
 
 using ::tsl::float8_e3m4;         // NOLINT(misc-unused-using-decls)
 using ::tsl::float8_e4m3;         // NOLINT(misc-unused-using-decls)
@@ -150,6 +152,12 @@ struct has_negative_zero
 
 template <>
 struct has_negative_zero<tsl::float4_e2m1fn> : std::bool_constant<true> {};
+
+template <>
+struct has_negative_zero<tsl::float6_e3m2fn> : std::bool_constant<true> {};
+
+template <>
+struct has_negative_zero<tsl::float6_e2m3fn> : std::bool_constant<true> {};
 
 template <>
 struct has_negative_zero<tsl::float8_e4m3fn> : std::bool_constant<true> {};

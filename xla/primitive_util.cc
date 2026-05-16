@@ -43,6 +43,12 @@ int SignificandWidth(PrimitiveType type) {
 }
 
 int ExponentWidth(PrimitiveType type) {
+  if (type == F6E3M2FN) {
+    return 3;
+  }
+  if (type == F6E2M3FN) {
+    return 2;
+  }
   // Per the IEEE-754 standard: a floating point type is stored as a sign bit, a
   // biased exponent and a trailing significand field.
   int total_bit_width = BitWidth(type);

@@ -196,6 +196,16 @@ constexpr PrimitiveType NativeToPrimitiveType<tsl::float4_e2m1fn>() {
 }
 
 template <>
+constexpr PrimitiveType NativeToPrimitiveType<tsl::float6_e3m2fn>() {
+  return F6E3M2FN;
+}
+
+template <>
+constexpr PrimitiveType NativeToPrimitiveType<tsl::float6_e2m3fn>() {
+  return F6E2M3FN;
+}
+
+template <>
 constexpr PrimitiveType NativeToPrimitiveType<tsl::float8_e5m2>() {
   return F8E5M2;
 }
@@ -357,6 +367,16 @@ struct PrimitiveTypeToNative<F4E2M1FN> {
 };
 
 template <>
+struct PrimitiveTypeToNative<F6E3M2FN> {
+  using type = tsl::float6_e3m2fn;
+};
+
+template <>
+struct PrimitiveTypeToNative<F6E2M3FN> {
+  using type = tsl::float6_e2m3fn;
+};
+
+template <>
 struct PrimitiveTypeToNative<F8E5M2> {
   using type = tsl::float8_e5m2;
 };
@@ -423,6 +443,11 @@ constexpr bool IsMXType(PrimitiveType type) {
   return type == F4E2M1FN || type == F8E8M0FNU;
 }
 
+// Returns true if the given primitive type is an 6-bit floating-point type.
+constexpr bool IsF6Type(PrimitiveType type) {
+  return type == F6E3M2FN || type == F6E2M3FN;
+}
+
 // Returns true if the given primitive type is an 8-bit floating-point type.
 constexpr bool IsF8Type(PrimitiveType type) {
   return type == F8E5M2 || type == F8E4M3 || type == F8E4M3FN ||
@@ -433,7 +458,7 @@ constexpr bool IsF8Type(PrimitiveType type) {
 // Returns true if the given primitive type is a floating-point type.
 constexpr bool IsFloatingPointType(PrimitiveType type) {
   return type == F16 || type == F32 || type == F64 || type == BF16 ||
-         IsF8Type(type) || IsMXType(type);
+         IsF8Type(type) || IsF6Type(type) || IsMXType(type);
 }
 
 // Returns true if the given primitive type is a complex type.
@@ -547,6 +572,12 @@ constexpr decltype(auto) FloatingPointTypeSwitch(F&& f, PrimitiveType type) {
       case F4E2M1FN:
         return std::forward<F>(f)(
             PrimitiveTypeConstant<PrimitiveType::F4E2M1FN>());
+      case F6E3M2FN:
+        return std::forward<F>(f)(
+            PrimitiveTypeConstant<PrimitiveType::F6E3M2FN>());
+      case F6E2M3FN:
+        return std::forward<F>(f)(
+            PrimitiveTypeConstant<PrimitiveType::F6E2M3FN>());
       case F8E3M4:
         return std::forward<F>(f)(
             PrimitiveTypeConstant<PrimitiveType::F8E3M4>());
@@ -666,6 +697,8 @@ constexpr void IntegralTypeForEach(F&& f) {
 template <typename F>
 constexpr void FloatingPointTypeForEach(F&& f) {
   std::forward<F>(f)(PrimitiveTypeConstant<PrimitiveType::F4E2M1FN>());
+  std::forward<F>(f)(PrimitiveTypeConstant<PrimitiveType::F6E3M2FN>());
+  std::forward<F>(f)(PrimitiveTypeConstant<PrimitiveType::F6E2M3FN>());
   std::forward<F>(f)(PrimitiveTypeConstant<PrimitiveType::F8E3M4>());
   std::forward<F>(f)(PrimitiveTypeConstant<PrimitiveType::F8E4M3>());
   std::forward<F>(f)(PrimitiveTypeConstant<PrimitiveType::F8E4M3FN>());
@@ -701,6 +734,9 @@ inline constexpr int PrimitiveTypeBitWidth() {
     }
     if constexpr (IsMXType(primitive_type)) {
       return NativeT::kBits;
+    }
+    if constexpr (IsF6Type(primitive_type)) {
+      return 8;
     }
     if constexpr (IsFloatingPointType(primitive_type)) {
       return sizeof(NativeT) * std::numeric_limits<uint8_t>::digits;
