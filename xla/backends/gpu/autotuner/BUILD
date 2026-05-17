@@ -521,6 +521,7 @@ cc_library(
     deps = [
         ":gpu_codegen_backend",
         "//xla:autotuning_proto_cc",
+        "//xla:shape_util",
         "//xla:xla_proto_cc",
         "//xla/backends/autotuner:backends_proto_cc",
         "//xla/backends/autotuner:codegen_backend",
@@ -536,7 +537,9 @@ cc_library(
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -576,6 +579,7 @@ xla_test(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )
