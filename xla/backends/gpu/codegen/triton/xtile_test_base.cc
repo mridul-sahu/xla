@@ -24,6 +24,7 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "xla/tsl/platform/status_macros.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -64,9 +65,9 @@ XTileTestBase::CreateXTileIrAndFileCheck(std::unique_ptr<HloModule> hlo_module,
   BlockLevelParameters block_level_parameters =
       BlockLevelParameters::FromBlockLevelFusionConfig(
           fusion_backend_config.block_level_fusion_config());
-  TF_ASSIGN_OR_RETURN(mlir::OwningOpRef<mlir::ModuleOp> xtile_dialect_module,
-                      CreateXTileIrAndFileCheck(*comp, block_level_parameters,
-                                                filecheck_pattern));
+  ASSIGN_OR_RETURN(mlir::OwningOpRef<mlir::ModuleOp> xtile_dialect_module,
+                   CreateXTileIrAndFileCheck(*comp, block_level_parameters,
+                                             filecheck_pattern));
   return std::make_pair(std::move(xtile_dialect_module), std::move(hlo_module));
 }
 
@@ -93,11 +94,11 @@ XTileTestBase::CreateXTileIrAndFileCheck(
   const auto& symbolic_tile_analysis =
       std::get<SymbolicTileAnalysis>(symbolic_tile_analysis_or);
 
-  TF_ASSIGN_OR_RETURN(Tiling tiling,
-                      TilingFromAnnotatedFusion(symbolic_tile_analysis,
-                                                block_level_parameters));
+  ASSIGN_OR_RETURN(Tiling tiling,
+                   TilingFromAnnotatedFusion(symbolic_tile_analysis,
+                                             block_level_parameters));
 
-  TF_ASSIGN_OR_RETURN(
+  ASSIGN_OR_RETURN(
       mlir::OwningOpRef<mlir::ModuleOp> xtile_dialect_module,
       xtile::EmitXTileModule("xtile_dialect_fn", *fusion,
                              symbolic_tile_analysis, tiling, *mlir_context()));
@@ -105,7 +106,7 @@ XTileTestBase::CreateXTileIrAndFileCheck(
   std::string out;
   llvm::raw_string_ostream os(out);
   xtile_dialect_module->print(os);
-  TF_ASSIGN_OR_RETURN(bool succeeded, RunFileCheck(out, filecheck_pattern));
+  ASSIGN_OR_RETURN(bool succeeded, RunFileCheck(out, filecheck_pattern));
   if (!succeeded) {
     return absl::InternalError("FileCheck failed.");
   }
@@ -120,14 +121,14 @@ absl::Status XTileTestBase::LowerXTileIrToTritonAndFileCheck(
   BlockLevelParameters block_level_parameters =
       BlockLevelParameters::FromBlockLevelFusionConfig(
           fusion_backend_config.block_level_fusion_config());
-  TF_RETURN_IF_ERROR(ir_emitter_triton_internal::LowerXTileToTriton(
+  RETURN_IF_ERROR(ir_emitter_triton_internal::LowerXTileToTriton(
       xtile_dialect_module, *mlir_context(), fusion,
       TestGpuDeviceInfo::H100SXMDeviceInfo(), block_level_parameters));
 
   std::string out;
   llvm::raw_string_ostream os(out);
   xtile_dialect_module->print(os);
-  TF_ASSIGN_OR_RETURN(bool succeeded, RunFileCheck(out, filecheck_pattern));
+  ASSIGN_OR_RETURN(bool succeeded, RunFileCheck(out, filecheck_pattern));
   if (!succeeded) {
     return absl::InternalError("FileCheck failed.");
   }
