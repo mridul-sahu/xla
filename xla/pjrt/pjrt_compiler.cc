@@ -47,8 +47,7 @@ PjRtCompilerRegistry& PjRtCompilerRegistry::Global() {
 absl::Status PjRtCompilerRegistry::RegisterFactory(
     absl::string_view platform_name, absl::string_view variant_name,
     PjRtCompilerFactory factory) {
-  std::pair<std::string, std::string> key{std::string(platform_name),
-                                          std::string(variant_name)};
+  CompilerType key{platform_name, variant_name};
   absl::MutexLock l(factory_mutex_);
   if (factories_.contains(key)) {
     return absl::AlreadyExistsError(
@@ -65,8 +64,7 @@ absl::Status PjRtCompilerRegistry::RegisterCompiler(
   if (compiler == nullptr) {
     return absl::InvalidArgumentError("Compiler cannot be null");
   }
-  std::pair<std::string, std::string> key{std::string(platform_name),
-                                          std::string(variant_name)};
+  CompilerType key{platform_name, variant_name};
   absl::MutexLock l(compiler_mutex_);
   if (compilers_.contains(key)) {
     return absl::AlreadyExistsError(absl::StrCat(
@@ -80,8 +78,7 @@ absl::Status PjRtCompilerRegistry::RegisterCompiler(
 absl::StatusOr<PjRtCompiler*> PjRtCompilerRegistry::GetOrCreateCompiler(
     absl::string_view platform_name, absl::string_view variant_name)
     ABSL_LOCKS_EXCLUDED(compiler_mutex_, factory_mutex_) {
-  std::pair<std::string, std::string> key{std::string(platform_name),
-                                          std::string(variant_name)};
+  CompilerType key{platform_name, variant_name};
 
   // Check if compiler has already existed in the compiler registry.
   {
@@ -134,7 +131,7 @@ absl::Status PjRtCompilerRegistry::InitializeVariant(
 }
 
 absl::Status PjRtCompilerRegistry::InitializeAllVariants() {
-  std::vector<std::pair<std::string, std::string>> keys;
+  std::vector<CompilerType> keys;
   {
     absl::MutexLock l(factory_mutex_);
     for (const auto& [key, factory] : factories_) {
@@ -143,7 +140,7 @@ absl::Status PjRtCompilerRegistry::InitializeAllVariants() {
   }
 
   for (const auto& key : keys) {
-    TF_RETURN_IF_ERROR(InitializeVariant(key.first, key.second));
+    TF_RETURN_IF_ERROR(InitializeVariant(key.platform_name, key.variant_name));
   }
   return absl::OkStatus();
 }
@@ -216,8 +213,6 @@ absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCompile(
 
   auto platform_name = topology.platform_name();
   auto compiler_variant = options.compiler_variant.value_or("");
-  std::pair<std::string, std::string> key{std::string(platform_name),
-                                          std::string(compiler_variant)};
   TF_ASSIGN_OR_RETURN(PjRtCompiler * compiler,
                       GetPjRtCompiler(platform_name, compiler_variant));
   return compiler->Compile(std::move(options), computation, topology, client);

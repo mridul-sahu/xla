@@ -144,6 +144,24 @@ class PjRtCompilerRegistry {
   absl::Status InitializeAllVariants();
 
  private:
+  struct CompilerType {
+    std::string platform_name;
+    std::string variant_name;
+
+    CompilerType(absl::string_view platform, absl::string_view variant)
+        : platform_name(platform), variant_name(variant) {}
+
+    template <typename H>
+    friend H AbslHashValue(H h, const CompilerType& c) {
+      return H::combine(std::move(h), c.platform_name, c.variant_name);
+    }
+
+    bool operator==(const CompilerType& other) const {
+      return platform_name == other.platform_name &&
+             variant_name == other.variant_name;
+    }
+  };
+
   absl::StatusOr<PjRtCompiler*> GetOrCreateCompiler(
       absl::string_view platform_name, absl::string_view variant_name)
       ABSL_LOCKS_EXCLUDED(compiler_mutex_, factory_mutex_);
@@ -152,12 +170,11 @@ class PjRtCompilerRegistry {
 
   absl::Mutex factory_mutex_;
 
-  absl::flat_hash_map<std::pair<std::string, std::string>,
-                      std::unique_ptr<PjRtCompiler>>
-      compilers_ ABSL_GUARDED_BY(compiler_mutex_);
+  absl::flat_hash_map<CompilerType, std::unique_ptr<PjRtCompiler>> compilers_
+      ABSL_GUARDED_BY(compiler_mutex_);
 
-  absl::flat_hash_map<std::pair<std::string, std::string>, PjRtCompilerFactory>
-      factories_ ABSL_GUARDED_BY(factory_mutex_);
+  absl::flat_hash_map<CompilerType, PjRtCompilerFactory> factories_
+      ABSL_GUARDED_BY(factory_mutex_);
 };
 
 // Thread-safe. Returns a pointer to the registered compiler for the given
