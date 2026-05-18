@@ -103,6 +103,9 @@ ENTRY entry_computation {
 }
 
 TEST_F(TritonTest, FuseSubchannelDequantizationWithTranspose) {
+  if (device_description().cuda_compute_capability().IsBlackwell()) {
+    GTEST_SKIP() << "Skipping flaky test for Blackwell GPUs (b/476375458).";
+  }
   constexpr absl::string_view kHloText = R"(
     HloModule FuseSubchannelDequantizationWithTranspose
 

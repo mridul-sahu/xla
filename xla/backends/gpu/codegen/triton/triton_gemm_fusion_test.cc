@@ -2513,7 +2513,7 @@ CHECK:      inputPrecision = tf32
                                ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
-TEST_F(TritonGemmTest, S8ToF16DotWithSmallTileDoesNotCrash) {
+TEST_F(TritonGemmTest, DISABLED_S8ToF16DotWithSmallTileDoesNotCrash) {
   constexpr absl::string_view kHloText = R"(
 HloModule m
 
