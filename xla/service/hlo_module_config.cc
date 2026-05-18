@@ -22,6 +22,7 @@ limitations under the License.
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -29,6 +30,7 @@ limitations under the License.
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "google/protobuf/repeated_ptr_field.h"
 #include "xla/service/computation_layout.h"
 #include "xla/service/computation_placer.h"
 #include "xla/service/hlo.pb.h"
@@ -36,8 +38,8 @@ limitations under the License.
 #include "xla/service/sharding_config.h"
 #include "xla/shape.h"
 #include "xla/shape_layout.h"
+#include "xla/tsl/platform/statusor.h"
 #include "xla/xla.pb.h"
-#include "tsl/platform/statusor.h"
 
 namespace xla {
 
@@ -50,6 +52,24 @@ HloModuleConfig::HloModuleConfig(const ProgramShape& program_shape,
 
 HloModuleConfig::HloModuleConfig(ComputationLayout entry_computation_layout)
     : entry_computation_layout_(std::move(entry_computation_layout)) {}
+
+HloModuleConfig HloModuleConfig::Share() {
+  std::shared_ptr<Shareable> shared = std::visit(
+      [&](auto&& s) {
+        using T = std::decay_t<decltype(s)>;
+        if constexpr (std::is_same_v<T, Shareable>) {
+          return std::make_shared<Shareable>(std::forward<decltype(s)>(s));
+        } else {
+          return s;
+        }
+      },
+      std::move(shareable_));
+  shareable_ = shared;
+
+  HloModuleConfig other;
+  other.shareable_ = std::move(shared);
+  return other;
+}
 
 void HloModuleConfig::SetDefaultComputationLayout(
     const ProgramShape& program_shape) {
@@ -88,7 +108,7 @@ std::string HloModuleConfig::compilation_cache_key() const {
   if (replica_count() != 1) {
     StrAppend(&key, "::replica_count=", replica_count());
   }
-  StrAppend(&key, debug_options_.DebugString());
+  StrAppend(&key, debug_options().DebugString());
   if (intra_op_parallelism_threads() > 0) {
     StrAppend(&key, "::intra_op_parallelism_threads=",
               intra_op_parallelism_threads());
@@ -96,12 +116,12 @@ std::string HloModuleConfig::compilation_cache_key() const {
   if (!device_type().empty()) {
     StrAppend(&key, device_type());
   }
-  StrAppend(&key, "::alias_passthrough_params=", alias_passthrough_params_);
+  StrAppend(&key, "::alias_passthrough_params=", alias_passthrough_params());
   StrAppend(&key, "::allow_spmd_sharding_propagation_to_parameters={",
-            absl::StrJoin(allow_spmd_sharding_propagation_to_parameters_, ","),
+            absl::StrJoin(allow_spmd_sharding_propagation_to_parameters(), ","),
             "}");
   StrAppend(&key, "::allow_spmd_sharding_propagation_to_output={",
-            absl::StrJoin(allow_spmd_sharding_propagation_to_output_, ","),
+            absl::StrJoin(allow_spmd_sharding_propagation_to_output(), ","),
             "}");
   if (!fdo_profile().empty()) {
     StrAppend(&key, "::fdo_profile=", absl::BytesToHexString(fdo_profile()));
@@ -280,71 +300,72 @@ HloModuleConfigProto HloModuleConfig::ToProto() const {
     *proto.mutable_entry_computation_layout() =
         entry_computation_layout().ComputeProgramShape().ToProto();
   }
-  proto.set_seed(seed_);
-  proto.set_launch_id(launch_id_);
-  proto.set_replica_count(replica_count_);
-  proto.set_num_partitions(num_partitions_);
-  for (bool requirement : param_requires_broadcast_via_collectives_) {
+  proto.set_seed(seed());
+  proto.set_launch_id(launch_id());
+  proto.set_replica_count(replica_count());
+  proto.set_num_partitions(num_partitions());
+  for (bool requirement : param_requires_broadcast_via_collectives()) {
     proto.add_param_requires_broadcast_via_collectives(requirement);
   }
-  proto.set_use_spmd_partitioning(use_spmd_partitioning_);
-  proto.set_use_auto_spmd_partitioning(use_auto_spmd_partitioning_);
-  for (int64_t partitioning_shape : auto_spmd_partitioning_mesh_shape_) {
+  proto.set_use_spmd_partitioning(use_spmd_partitioning());
+  proto.set_use_auto_spmd_partitioning(use_auto_spmd_partitioning());
+  for (int64_t partitioning_shape : auto_spmd_partitioning_mesh_shape()) {
     proto.add_auto_spmd_partitioning_mesh_shape(partitioning_shape);
   }
-  for (int64_t partitioning_id : auto_spmd_partitioning_mesh_ids_) {
+  for (int64_t partitioning_id : auto_spmd_partitioning_mesh_ids()) {
     proto.add_auto_spmd_partitioning_mesh_ids(partitioning_id);
   }
-  proto.set_exec_time_optimization_effort(exec_time_optimization_effort_);
-  proto.set_memory_fitting_effort(memory_fitting_effort_);
-  proto.set_optimization_level(optimization_level_);
-  proto.set_memory_fitting_level(memory_fitting_level_);
-  proto.set_deduplicate_hlo(deduplicate_hlo_);
-  proto.set_intra_op_parallelism_threads(intra_op_parallelism_threads_);
-  proto.set_device_type(device_type_);
-  *proto.mutable_debug_options() = debug_options_;
+  proto.set_exec_time_optimization_effort(exec_time_optimization_effort());
+  proto.set_memory_fitting_effort(memory_fitting_effort());
+  proto.set_optimization_level(optimization_level());
+  proto.set_memory_fitting_level(memory_fitting_level());
+  proto.set_deduplicate_hlo(deduplicate_hlo());
+  proto.set_intra_op_parallelism_threads(intra_op_parallelism_threads());
+  proto.set_device_type(device_type());
+  *proto.mutable_debug_options() = debug_options();
 
   if (has_static_device_assignment()) {
     auto proto_assignment = proto.mutable_static_device_assignment();
-    static_device_assignment_->Serialize(proto_assignment);
+    static_device_assignment().Serialize(proto_assignment);
   }
   AssignProtoShardableValueUpdatePairs(
       proto.mutable_shardable_value_update_pairs(),
-      shardable_value_update_pairs_);
-  proto.set_alias_passthrough_params(alias_passthrough_params_);
+      shardable_value_update_pairs());
+  proto.set_alias_passthrough_params(alias_passthrough_params());
   proto.set_content_aware_computation_sorting(
-      content_aware_computation_sorting_);
+      content_aware_computation_sorting());
   proto.set_fusion_config_collection(
       static_cast<HloModuleConfigProto::FusionConfigCollection>(
-          fusion_config_collection_));
-  AssignProtoFusionConfig(proto, fusion_config_);
-  AssignProtoDotConfig(proto, dot_config_);
-  AssignProtoLayoutConfig(proto, layout_config_);
-  for (uint64_t cfg : memory_space_assignment_config_) {
+          fusion_config_collection()));
+  AssignProtoFusionConfig(proto, fusion_config());
+  AssignProtoDotConfig(proto, dot_config());
+  AssignProtoLayoutConfig(proto, layout_config());
+  for (uint64_t cfg : memory_space_assignment_config()) {
     proto.add_memory_space_assignment_config(cfg);
   }
-  AssignProtoPhaseOrderingConfig(proto, phase_ordering_config_);
-  proto.set_phase_index(phase_index_);
+  AssignProtoPhaseOrderingConfig(proto, phase_ordering_config());
+  proto.set_phase_index(phase_index());
 
-  for (bool value : allow_spmd_sharding_propagation_to_parameters_) {
+  for (bool value : allow_spmd_sharding_propagation_to_parameters()) {
     proto.add_allow_spmd_sharding_propagation_to_parameters(value);
   }
-  for (bool value : allow_spmd_sharding_propagation_to_output_) {
+  for (bool value : allow_spmd_sharding_propagation_to_output()) {
     proto.add_allow_spmd_sharding_propagation_to_output(value);
   }
 
   auto proto_analysis_map = proto.mutable_analysis_allowance_map();
-  for (const auto& [key, value] : analysis_allowance_map_) {
+  for (const auto& [key, value] : shareable().analysis_allowance_map) {
     proto_analysis_map->insert({std::string(key), value});
   }
-  proto.set_matrix_unit_operand_precision(matrix_unit_operand_precision_);
-  proto.set_allow_separate_sharding_programs(allow_separate_sharding_programs_);
-  proto.set_fdo_profile(fdo_profile_);
-  proto.set_device_memory_size(device_memory_size_);
-  proto.set_use_shardy_partitioner(use_shardy_partitioner_);
-  proto.set_partition_size(partition_size_);
-  *proto.mutable_sharding_config() = ShardingConfig::ToProto(sharding_config_);
-  *proto.mutable_schedule_config() = ScheduleConfig::ToProto(schedule_config_);
+  proto.set_matrix_unit_operand_precision(matrix_unit_operand_precision());
+  proto.set_allow_separate_sharding_programs(
+      allow_separate_sharding_programs());
+  proto.set_fdo_profile(fdo_profile());
+  proto.set_device_memory_size(device_memory_size());
+  proto.set_use_shardy_partitioner(use_shardy_partitioner());
+  proto.set_partition_size(partition_size());
+  *proto.mutable_sharding_config() = ShardingConfig::ToProto(sharding_config());
+  *proto.mutable_schedule_config() = ScheduleConfig::ToProto(schedule_config());
   return proto;
 }
 
@@ -360,72 +381,110 @@ HloModuleConfig::CreateFromProto(const HloModuleConfigProto& proto) {
   } else {
     config->clear_entry_computation_layout();
   }
-  config->seed_ = proto.seed();
-  config->launch_id_ = proto.launch_id();
-  config->replica_count_ = proto.replica_count();
-  config->num_partitions_ = proto.num_partitions();
-  config->param_requires_broadcast_via_collectives_.assign(
+  config->mutable_shareable().seed = proto.seed();
+  config->mutable_shareable().launch_id = proto.launch_id();
+  config->mutable_shareable().replica_count = proto.replica_count();
+  config->mutable_shareable().num_partitions = proto.num_partitions();
+  config->mutable_shareable().param_requires_broadcast_via_collectives.assign(
       proto.param_requires_broadcast_via_collectives().begin(),
       proto.param_requires_broadcast_via_collectives().end());
-  config->use_spmd_partitioning_ = proto.use_spmd_partitioning();
-  config->use_auto_spmd_partitioning_ = proto.use_auto_spmd_partitioning();
-  config->auto_spmd_partitioning_mesh_shape_.assign(
+  config->mutable_shareable().use_spmd_partitioning =
+      proto.use_spmd_partitioning();
+  config->mutable_shareable().use_auto_spmd_partitioning =
+      proto.use_auto_spmd_partitioning();
+  config->mutable_shareable().auto_spmd_partitioning_mesh_shape.assign(
       proto.auto_spmd_partitioning_mesh_shape().begin(),
       proto.auto_spmd_partitioning_mesh_shape().end());
-  config->auto_spmd_partitioning_mesh_ids_.assign(
+  config->mutable_shareable().auto_spmd_partitioning_mesh_ids.assign(
       proto.auto_spmd_partitioning_mesh_ids().begin(),
       proto.auto_spmd_partitioning_mesh_ids().end());
-  config->exec_time_optimization_effort_ =
+  config->mutable_shareable().exec_time_optimization_effort =
       proto.exec_time_optimization_effort();
-  config->memory_fitting_effort_ = proto.memory_fitting_effort();
-  config->optimization_level_ = proto.optimization_level();
-  config->memory_fitting_level_ = proto.memory_fitting_level();
-  config->deduplicate_hlo_ = proto.deduplicate_hlo();
-  config->intra_op_parallelism_threads_ = proto.intra_op_parallelism_threads();
-  config->device_type_ = proto.device_type();
+  config->mutable_shareable().memory_fitting_effort =
+      proto.memory_fitting_effort();
+  config->mutable_shareable().optimization_level = proto.optimization_level();
+  config->mutable_shareable().memory_fitting_level =
+      proto.memory_fitting_level();
+  config->mutable_shareable().deduplicate_hlo = proto.deduplicate_hlo();
+  config->mutable_shareable().intra_op_parallelism_threads =
+      proto.intra_op_parallelism_threads();
+  config->mutable_shareable().device_type = proto.device_type();
   if (proto.has_debug_options()) {
-    config->debug_options_ = proto.debug_options();
+    config->mutable_shareable().debug_options = proto.debug_options();
   }
   if (proto.has_static_device_assignment()) {
     TF_ASSIGN_OR_RETURN(
         std::unique_ptr<DeviceAssignment> device_assignment,
         DeviceAssignment::Deserialize(proto.static_device_assignment()));
-    config->static_device_assignment_ = std::move(*device_assignment);
+    config->mutable_shareable().static_device_assignment =
+        std::move(*device_assignment);
   }
   AssignStructShardableValueUpdatePairs(*config,
                                         proto.shardable_value_update_pairs());
-  config->alias_passthrough_params_ = proto.alias_passthrough_params();
-  config->content_aware_computation_sorting_ =
+  config->mutable_shareable().alias_passthrough_params =
+      proto.alias_passthrough_params();
+  config->mutable_shareable().content_aware_computation_sorting =
       proto.content_aware_computation_sorting();
-  config->fusion_config_collection_ =
+  config->mutable_shareable().fusion_config_collection =
       static_cast<FusionConfigCollection>(proto.fusion_config_collection());
   AssignStructFusionConfig(*config, proto);
   AssignStructDotConfig(*config, proto);
   AssignStructLayoutConfig(*config, proto);
-  config->memory_space_assignment_config_.assign(
+  config->mutable_shareable().memory_space_assignment_config.assign(
       proto.memory_space_assignment_config().begin(),
       proto.memory_space_assignment_config().end());
   AssignStructPhaseOrderingConfig(*config, proto);
-  config->phase_index_ = proto.phase_index();
-  config->allow_spmd_sharding_propagation_to_parameters_.assign(
-      proto.allow_spmd_sharding_propagation_to_parameters().begin(),
-      proto.allow_spmd_sharding_propagation_to_parameters().end());
-  config->allow_spmd_sharding_propagation_to_output_.assign(
+  config->mutable_shareable().phase_index = proto.phase_index();
+  config->mutable_shareable()
+      .allow_spmd_sharding_propagation_to_parameters.assign(
+          proto.allow_spmd_sharding_propagation_to_parameters().begin(),
+          proto.allow_spmd_sharding_propagation_to_parameters().end());
+  config->mutable_shareable().allow_spmd_sharding_propagation_to_output.assign(
       proto.allow_spmd_sharding_propagation_to_output().begin(),
       proto.allow_spmd_sharding_propagation_to_output().end());
-  config->analysis_allowance_map_.insert(proto.analysis_allowance_map().begin(),
-                                         proto.analysis_allowance_map().end());
-  config->matrix_unit_operand_precision_ =
+  config->mutable_shareable().analysis_allowance_map.insert(
+      proto.analysis_allowance_map().begin(),
+      proto.analysis_allowance_map().end());
+  config->mutable_shareable().matrix_unit_operand_precision =
       proto.matrix_unit_operand_precision();
-  config->allow_separate_sharding_programs_ =
+  config->mutable_shareable().allow_separate_sharding_programs =
       proto.allow_separate_sharding_programs();
-  config->fdo_profile_ = proto.fdo_profile();
-  config->device_memory_size_ = proto.device_memory_size();
-  config->use_shardy_partitioner_ = proto.use_shardy_partitioner();
-  config->partition_size_ = proto.partition_size();
-  config->sharding_config_ = ShardingConfig::FromProto(proto.sharding_config());
-  config->schedule_config_ = ScheduleConfig::FromProto(proto.schedule_config());
+  config->mutable_shareable().fdo_profile = proto.fdo_profile();
+  config->mutable_shareable().device_memory_size = proto.device_memory_size();
+  config->mutable_shareable().use_shardy_partitioner =
+      proto.use_shardy_partitioner();
+  config->mutable_shareable().partition_size = proto.partition_size();
+  config->mutable_shareable().sharding_config =
+      ShardingConfig::FromProto(proto.sharding_config());
+  config->mutable_shareable().schedule_config =
+      ScheduleConfig::FromProto(proto.schedule_config());
   return std::move(config);
+}
+
+HloModuleConfig::Shareable& HloModuleConfig::mutable_shareable() {
+  return std::visit(
+      [](auto&& s) -> Shareable& {
+        using T = std::decay_t<decltype(s)>;
+        if constexpr (std::is_same_v<T, Shareable>) {
+          return s;
+        } else {
+          return *s;
+        }
+      },
+      shareable_);
+}
+
+const HloModuleConfig::Shareable& HloModuleConfig::shareable() const {
+  return std::visit(
+      [](auto&& s) -> const Shareable& {
+        using T = std::decay_t<decltype(s)>;
+        if constexpr (std::is_same_v<T, Shareable>) {
+          return s;
+        } else {
+          return *s;
+        }
+      },
+      shareable_);
 }
 
 }  // namespace xla

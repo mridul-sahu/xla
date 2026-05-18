@@ -77,6 +77,7 @@ class ExtractionVisitor : public ConstDfsHloVisitorWithDefault {
       ReplaceTypeSelector replace_type_selector)
       : root_instruction_(root_instruction),
         old_module_(root_instruction->GetModule()),
+        config_(root_instruction->GetModule()->mutable_config().Share()),
         module_(std::make_unique<HloModule>(
             "extracted", config_,
             std::make_unique<CompilationEnvironments>(
