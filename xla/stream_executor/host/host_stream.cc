@@ -19,6 +19,7 @@ limitations under the License.
 
 #include <string.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -66,8 +67,8 @@ absl::Status HostStream::Memcpy(DeviceAddressBase* gpu_dst,
 
 absl::Status HostStream::Memset32(DeviceAddressBase* location, uint32_t pattern,
                                   uint64_t size) {
-  void* gpu_mem = location->opaque();
-  memset(gpu_mem, pattern, size);
+  uint32_t* dst = static_cast<uint32_t*>(location->opaque());
+  std::fill_n(dst, size / sizeof(uint32_t), pattern);
   return absl::OkStatus();
 }
 
