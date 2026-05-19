@@ -121,7 +121,7 @@ static absl::StatusOr<const se::CommandBuffer::Command*> Handle(
   }
 
   if (auto* update = std::get_if<Command::RecordUpdate>(&action)) {
-    TF_RETURN_IF_ERROR(update_command(update->command));
+    RETURN_IF_ERROR(update_command(update->command));
     return update->command;
   }
 
@@ -140,7 +140,7 @@ CaseCmd::CaseCmd(ShapedSlice index, std::vector<CommandExecutor> branches)
 
 absl::Status CaseCmd::Initialize(const Thunk::InitializeParams& params) {
   for (auto& branch : branches_) {
-    TF_RETURN_IF_ERROR(branch.Initialize(params));
+    RETURN_IF_ERROR(branch.Initialize(params));
   }
   return absl::OkStatus();
 }
@@ -209,8 +209,8 @@ WhileCmd::WhileCmd(BufferAllocation::Slice pred, CommandExecutor cond_commands,
       enable_loop_unroll_(enable_loop_unroll) {}
 
 absl::Status WhileCmd::Initialize(const Thunk::InitializeParams& params) {
-  TF_RETURN_IF_ERROR(cond_commands_.Initialize(params));
-  TF_RETURN_IF_ERROR(body_commands_.Initialize(params));
+  RETURN_IF_ERROR(cond_commands_.Initialize(params));
+  RETURN_IF_ERROR(body_commands_.Initialize(params));
   if (enable_loop_unroll_ && body_commands_.support_loop_unroll() &&
       cond_commands_.support_loop_unroll() && trip_count_.has_value()) {
     is_unrolled_loop_ = true;
@@ -224,8 +224,8 @@ absl::Status WhileCmd::Initialize(const Thunk::InitializeParams& params) {
 }
 
 absl::Status WhileCmd::Prepare(const Thunk::PrepareParams& params) {
-  TF_RETURN_IF_ERROR(cond_commands_.Prepare(params));
-  TF_RETURN_IF_ERROR(body_commands_.Prepare(params));
+  RETURN_IF_ERROR(cond_commands_.Prepare(params));
+  RETURN_IF_ERROR(body_commands_.Prepare(params));
   return absl::OkStatus();
 }
 
@@ -263,14 +263,14 @@ absl::StatusOr<const se::CommandBuffer::Command*> WhileCmd::Record(
       ScopedWhileLoop loop("record_fn", trip_count_);
       for (int64_t i = 0; i < *trip_count_; loop.IncLoopIteration(), ++i) {
         CommandExecutor::RecordId record_id(i);
-        TF_ASSIGN_OR_RETURN(dependencies,
-                            cond_commands_.RecordCreate(
-                                execute_params, new_record_params,
-                                child_command_buffer, dependencies, record_id));
-        TF_ASSIGN_OR_RETURN(dependencies,
-                            body_commands_.RecordCreate(
-                                execute_params, new_record_params,
-                                child_command_buffer, dependencies, record_id));
+        ASSIGN_OR_RETURN(dependencies,
+                         cond_commands_.RecordCreate(
+                             execute_params, new_record_params,
+                             child_command_buffer, dependencies, record_id));
+        ASSIGN_OR_RETURN(dependencies,
+                         body_commands_.RecordCreate(
+                             execute_params, new_record_params,
+                             child_command_buffer, dependencies, record_id));
       }
 
       return absl::OkStatus();
@@ -286,10 +286,10 @@ absl::StatusOr<const se::CommandBuffer::Command*> WhileCmd::Record(
       ScopedWhileLoop loop("record_fn", trip_count_);
       for (int64_t i = 0; i < *trip_count_; loop.IncLoopIteration(), ++i) {
         CommandExecutor::RecordId record_id(i);
-        TF_RETURN_IF_ERROR(
+        RETURN_IF_ERROR(
             cond_commands_.RecordUpdate(execute_params, new_record_params,
                                         child_command_buffer, record_id));
-        TF_RETURN_IF_ERROR(
+        RETURN_IF_ERROR(
             body_commands_.RecordUpdate(execute_params, new_record_params,
                                         child_command_buffer, record_id));
       }
