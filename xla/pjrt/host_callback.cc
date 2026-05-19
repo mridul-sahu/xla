@@ -16,6 +16,7 @@ limitations under the License.
 #include "xla/pjrt/host_callback.h"
 
 #include <cstddef>
+#include <cstring>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -109,6 +110,9 @@ absl::Status HostCallbackContext::OnSend(int arg_num,
   // this point, this callback can be invoked again (e.g. in a loop) anytime.
   for (int i = 0; i < result_channels_.size(); ++i) {
     auto& result_channel = result_channels_[i];
+    if (!status.ok()) {
+      std::memset(results[i].data(), 0, results[i].size());
+    }
     result_channel->Push(std::move(results[i]));
   }
 
