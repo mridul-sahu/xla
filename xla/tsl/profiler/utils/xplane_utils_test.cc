@@ -15,18 +15,24 @@ limitations under the License.
 
 #include "xla/tsl/profiler/utils/xplane_utils.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "testing/base/public/benchmark.h"
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/log/log.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "third_party/tcmalloc/malloc_extension.h"
 #include "xla/tsl/platform/test.h"
 #include "xla/tsl/platform/types.h"
 #include "xla/tsl/profiler/utils/math_utils.h"
@@ -1009,6 +1015,245 @@ TEST(XplaneUtilsTest, MergeSubprocessXSpace_WithoutProcessId) {
   EXPECT_EQ(dst_space.planes(0).name(), "plane2 [456]");
 }
 
+TEST(XplaneUtilsTest, MergeXSpaceTest) {
+  auto to = std::make_unique<XSpace>();
+  auto from = std::make_unique<XSpace>();
+
+  to->add_hostnames("host1");
+  from->add_hostnames("host2");
+
+  {
+    XPlaneBuilder p1(to->add_planes());
+    p1.SetName("p1");
+    auto l1 = p1.GetOrCreateLine(1);
+    auto e1 = l1.AddEvent(*p1.GetOrCreateEventMetadata("e1"));
+    e1.SetOffsetNs(10);
+    e1.SetDurationNs(10);
+  }
+  {
+    XPlaneBuilder p2(from->add_planes());
+    p2.SetName("p1");  // Same plane name to trigger merge
+    auto l2 = p2.GetOrCreateLine(2);
+    auto e2 = l2.AddEvent(*p2.GetOrCreateEventMetadata("e2"));
+    e2.SetOffsetNs(20);
+    e2.SetDurationNs(20);
+  }
+
+  MergeXSpace(std::move(from), to.get());
+
+  EXPECT_THAT(to->hostnames(), UnorderedElementsAre("host1", "host2"));
+  ASSERT_EQ(to->planes_size(), 1);  // Planes with same name are merged
+  EXPECT_EQ(to->planes(0).name(), "p1");
+  EXPECT_EQ(to->planes(0).lines_size(), 2);  // Both lines should be present
+}
+
+TEST(XplaneUtilsTest, MergeMemoryUsageComparison) {
+  const int kLines = 100;
+  const int kEvents = 1000;
+
+  // 1. Measure Copy Merge Memory
+  size_t copy_mem_peak = 0;
+  {
+    XPlane dst_plane;
+    XPlane src_plane;
+    dst_plane.set_name("plane1");
+    src_plane.set_name("plane1");
+
+    // Populate destination
+    {
+      XPlaneBuilder dst(&dst_plane);
+      for (int l = 0; l < kLines; ++l) {
+        auto line = dst.GetOrCreateLine(l);
+        for (int e = 0; e < kEvents; ++e) {
+          auto event = line.AddEvent(
+              *dst.GetOrCreateEventMetadata(absl::StrCat("e", e)));
+          event.SetOffsetNs(e * 10);
+          event.SetDurationNs(5);
+        }
+      }
+    }
+    // Populate source
+    {
+      XPlaneBuilder src(&src_plane);
+      for (int l = 0; l < kLines; ++l) {
+        auto line = src.GetOrCreateLine(l);
+        for (int e = 0; e < kEvents; ++e) {
+          auto& event_metadata =
+              *src.GetOrCreateEventMetadata(absl::StrCat("e", e + kEvents));
+          auto event = line.AddEvent(event_metadata);
+          event.SetOffsetNs(e * 10 + 2);
+          event.SetDurationNs(5);
+        }
+      }
+    }
+
+    // Record memory before merge
+    size_t before = tcmalloc::MallocExtension::GetNumericProperty(
+                        "generic.current_allocated_bytes")
+                        .value_or(0);
+
+    MergePlanes(src_plane, &dst_plane);
+
+    // Record memory after merge
+    size_t after = tcmalloc::MallocExtension::GetNumericProperty(
+                       "generic.current_allocated_bytes")
+                       .value_or(0);
+    copy_mem_peak = (after > before) ? (after - before) : 0;
+  }
+
+  // 2. Measure Destructive Merge Memory
+  size_t destructive_mem_peak = 0;
+  {
+    auto to = std::make_unique<XSpace>();
+    auto from = std::make_unique<XSpace>();
+
+    // Populate destination
+    {
+      XPlaneBuilder dst(to->add_planes());
+      dst.SetName("plane1");
+      for (int l = 0; l < kLines; ++l) {
+        auto line = dst.GetOrCreateLine(l);
+        for (int e = 0; e < kEvents; ++e) {
+          auto event = line.AddEvent(
+              *dst.GetOrCreateEventMetadata(absl::StrCat("e", e)));
+          event.SetOffsetNs(e * 10);
+          event.SetDurationNs(5);
+        }
+      }
+    }
+    // Populate source
+    {
+      XPlaneBuilder src(from->add_planes());
+      src.SetName("plane1");
+      for (int l = 0; l < kLines; ++l) {
+        auto line = src.GetOrCreateLine(l);
+        for (int e = 0; e < kEvents; ++e) {
+          auto event = line.AddEvent(
+              *src.GetOrCreateEventMetadata(absl::StrCat("e", e + kEvents)));
+          event.SetOffsetNs(e * 10 + 2);
+          event.SetDurationNs(5);
+        }
+      }
+    }
+
+    // Record memory before merge
+    size_t before = tcmalloc::MallocExtension::GetNumericProperty(
+                        "generic.current_allocated_bytes")
+                        .value_or(0);
+
+    MergeXSpace(std::move(from), to.get());
+
+    // Record memory after merge
+    size_t after = tcmalloc::MallocExtension::GetNumericProperty(
+                       "generic.current_allocated_bytes")
+                       .value_or(0);
+    destructive_mem_peak = (after > before) ? (after - before) : 0;
+  }
+
+  LOG(INFO) << "================================================";
+  LOG(INFO) << "MEMORY USAGE COMPARISON (100,000 events):";
+  LOG(INFO) << "Copy-based Merge Peak Memory: "
+            << (copy_mem_peak / 1024.0 / 1024.0) << " MB";
+  LOG(INFO) << "Destructive Merge Peak Memory: "
+            << (destructive_mem_peak / 1024.0 / 1024.0) << " MB";
+  LOG(INFO) << "================================================";
+}
+
 }  // namespace
+
+void BM_MergePlanesCopy(benchmark::State& state) {
+  const int kLines = 100;
+  const int kEvents = state.range(0);
+
+  for (auto s : state) {
+    state.PauseTiming();
+    XPlane dst_plane;
+    XPlane src_plane;
+    dst_plane.set_name("plane1");
+    src_plane.set_name("plane1");
+
+    // Populate destination
+    {
+      XPlaneBuilder dst(&dst_plane);
+      for (int l = 0; l < kLines; ++l) {
+        auto line = dst.GetOrCreateLine(l);
+        for (int e = 0; e < kEvents; ++e) {
+          auto event = line.AddEvent(
+              *dst.GetOrCreateEventMetadata(absl::StrCat("e", e)));
+          event.SetOffsetNs(e * 10);
+          event.SetDurationNs(5);
+        }
+      }
+    }
+    // Populate source
+    {
+      XPlaneBuilder src(&src_plane);
+      for (int l = 0; l < kLines; ++l) {
+        auto line = src.GetOrCreateLine(l);
+        for (int e = 0; e < kEvents; ++e) {
+          auto event = line.AddEvent(
+              *src.GetOrCreateEventMetadata(absl::StrCat("e", e + kEvents)));
+          event.SetOffsetNs(e * 10 + 2);
+          event.SetDurationNs(5);
+        }
+      }
+    }
+
+    state.ResumeTiming();
+    MergePlanes(src_plane, &dst_plane);
+    state.PauseTiming();
+    dst_plane.Clear();
+    state.ResumeTiming();
+  }
+}
+BENCHMARK(BM_MergePlanesCopy)->Arg(10)->Arg(100)->Arg(1000);
+
+void BM_MergeXSpaceDestructive(benchmark::State& state) {
+  const int kLines = 100;
+  const int kEvents = state.range(0);
+
+  for (auto s : state) {
+    state.PauseTiming();
+    auto to = std::make_unique<XSpace>();
+    auto from = std::make_unique<XSpace>();
+
+    // Populate destination
+    {
+      XPlaneBuilder dst(to->add_planes());
+      dst.SetName("plane1");
+      for (int l = 0; l < kLines; ++l) {
+        auto line = dst.GetOrCreateLine(l);
+        for (int e = 0; e < kEvents; ++e) {
+          auto event = line.AddEvent(
+              *dst.GetOrCreateEventMetadata(absl::StrCat("e", e)));
+          event.SetOffsetNs(e * 10);
+          event.SetDurationNs(5);
+        }
+      }
+    }
+    // Populate source
+    {
+      XPlaneBuilder src(from->add_planes());
+      src.SetName("plane1");
+      for (int l = 0; l < kLines; ++l) {
+        auto line = src.GetOrCreateLine(l);
+        for (int e = 0; e < kEvents; ++e) {
+          auto event = line.AddEvent(
+              *src.GetOrCreateEventMetadata(absl::StrCat("e", e + kEvents)));
+          event.SetOffsetNs(e * 10 + 2);
+          event.SetDurationNs(5);
+        }
+      }
+    }
+
+    state.ResumeTiming();
+    MergeXSpace(std::move(from), to.get());
+    state.PauseTiming();
+    to.reset();
+    state.ResumeTiming();
+  }
+}
+BENCHMARK(BM_MergeXSpaceDestructive)->Arg(10)->Arg(100)->Arg(1000);
+
 }  // namespace profiler
 }  // namespace tsl
