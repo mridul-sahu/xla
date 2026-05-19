@@ -53,7 +53,7 @@ class CustomCallThunk final : public Thunk {
 
     std::vector<BufferAllocation::Slice> results_buffers;
     std::vector<Shape> results_shapes;
-    bool is_tuple_result;
+    bool is_tuple_result = false;
   };
 
   static absl::StatusOr<std::unique_ptr<CustomCallThunk>> Create(

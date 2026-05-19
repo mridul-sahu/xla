@@ -64,6 +64,9 @@ absl::Status CustomCallThunkToProto(const Thunk& thunk, ThunkProto& proto) {
         custom_call_proto->mutable_op_buffers()->add_results_shapes()));
   }
 
+  custom_call_proto->mutable_op_buffers()->set_is_tuple_result(
+      custom_call_thunk.op_buffers().is_tuple_result);
+
   return absl::OkStatus();
 }
 
@@ -95,6 +98,16 @@ absl::StatusOr<std::unique_ptr<Thunk>> CustomCallThunkFromProto(
     const auto& [res_buffer, res_shape] = res_slice_shape;
     op_buffers.results_buffers.push_back(res_buffer);
     op_buffers.results_shapes.push_back(res_shape);
+  }
+
+  op_buffers.is_tuple_result =
+      proto.custom_call_thunk().op_buffers().is_tuple_result();
+
+  // Backward-compatibility check: if is_tuple_result is false but the result
+  // size is > 1, we know it is a tuple.
+  if (!op_buffers.is_tuple_result &&
+      proto.custom_call_thunk().op_buffers().results_shapes_size() > 1) {
+    op_buffers.is_tuple_result = true;
   }
 
   return CustomCallThunk::Create(
