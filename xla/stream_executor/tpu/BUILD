@@ -231,6 +231,7 @@ cc_library(
     name = "tpu_executor_init_fns",
     hdrs = ["tpu_executor_init_fns.inc"],
     visibility = ["//visibility:public"],
+    deps = ["@com_google_absl//absl/base"],
 )
 
 cc_library(
@@ -376,6 +377,7 @@ cc_library(
     deps = [
         ":tpu_api",
         ":tpu_profiler_c_api_hdrs",
+        "@com_google_absl//absl/base",
     ],
 )
 

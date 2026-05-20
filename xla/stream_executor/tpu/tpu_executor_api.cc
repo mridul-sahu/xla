@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "xla/stream_executor/tpu/tpu_executor_api.h"
 
+#include <atomic>
+
 #include "xla/stream_executor/tpu/tpu_executor_c_api.h"
 
 namespace stream_executor {
@@ -42,7 +44,11 @@ bool IsInitialized(TfTpu_ExecutorApiFn* executor_api_fn) {
   // Check if an arbitrary function pointer is initialized. We could check more
   // functions or add an explicit 'initialized' field to TfTpu_ExecutorApiFn,
   // but this works well enough.
-  return executor_api_fn->TpuPlatform_NewFn != nullptr;
+  bool is_initialized = executor_api_fn->TpuPlatform_NewFn != nullptr;
+  if (is_initialized) {
+    std::atomic_thread_fence(std::memory_order_acquire);
+  }
+  return is_initialized;
 }
 
 }  // namespace tpu

@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+#include <atomic>
 #include <memory>
 #include <string>
 #include <utility>
@@ -205,6 +206,7 @@ std::unique_ptr<ProfilerInterface> CreateTpuTracer(
   if (stream_executor::tpu::ProfilerApiFn()->TpuProfiler_CreateFn == nullptr) {
     return nullptr;
   }
+  std::atomic_thread_fence(std::memory_order_acquire);
   return std::make_unique<TpuTracer>();
 }
 
