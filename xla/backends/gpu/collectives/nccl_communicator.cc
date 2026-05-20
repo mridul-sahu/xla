@@ -158,7 +158,7 @@ NcclCommunicator::CreateSymmetricMemory(se::DeviceAddressBase addr) {
           return FailedPrecondition("NcclCommunicator aborted");
         }
 
-        return NcclSymmetricMemory::Create(comm_, addr);
+        return NcclSymmetricMemory::Create(comm_, addr, executor_);
       });
 }
 
@@ -177,17 +177,10 @@ absl::StatusOr<std::unique_ptr<NcclCommunicator>> NcclCommunicator::Create(
     return comm;
   };
 
-  if (!is_async) {
-    // If this NcclCommunicator is synchronous, construct ncclComm_t in the
-    // calling thread.
-    TF_ASSIGN_OR_RETURN(ncclComm_t comm, f());
-    return absl::WrapUnique(new NcclCommunicator(stream_executor, comm, nullptr,
-                                                 std::move(cancel)));
-  }
-
-  // If this NcclCommunicator is asynchronous, then all operations on the
-  // underlying ncclComm_t, including its creation, must take place on the
-  // single threaded executor.
+  // All operations on the  underlying ncclComm_t, including its creation, must
+  // take place on the single threaded executor. It's important to do this even
+  // for the synchronous case since symmetrical memory cleanup might
+  // happen in a different thread.
   auto executor = std::make_unique<SingleThreadedExecutor>(env);
   TF_ASSIGN_OR_RETURN(ncclComm_t comm,
                       MakeFutureOn<ncclComm_t>(*executor, f).Await());
@@ -516,10 +509,10 @@ absl::Status NcclCommunicator::LaunchAllGather(
 
   VLOG(3) << absl::StreamFormat(
       "[%d] Launch NCCL AllGather operation; send_buffer=%p; "
-      "recv_buffer=%p; dtype=%s; count=%d; comm=%p; stream=%p",
+      "recv_buffer=%p; dtype=%s; count=%d; comm=%p; stream=%p; executor=%p",
       stream->parent()->device_ordinal(), send_buffer.opaque(),
       recv_buffer.opaque(), primitive_util::LowercasePrimitiveTypeName(dtype),
-      count, comm_, stream);
+      count, comm_, stream, executor_.get());
 
   TF_ASSIGN_OR_RETURN(
       ncclDataType_t nccl_dtype,
