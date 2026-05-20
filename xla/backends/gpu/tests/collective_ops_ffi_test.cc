@@ -973,9 +973,10 @@ TEST_F(CollectiveOpsTestFFI, AllReduce) {
 
       ENTRY test_computation {
         id = u32[] replica-id()
-        ROOT all-reduce = u32[] custom-call(id),
+        all-reduce = u32[] custom-call(id),
           custom_call_target="__xla_test$$all_reduce",
           api_version=API_VERSION_TYPED_FFI
+        ROOT out = u32[] copy(all-reduce)
       }
     )";
 
@@ -1068,9 +1069,10 @@ TEST_P(AllReduceTest, PeerAllReduce) {
 
       ENTRY test_computation {
         id = u32[] replica-id()
-        ROOT all-reduce = u32[] custom-call(id),
+        all-reduce = u32[] custom-call(id),
           custom_call_target="__xla_test_$0_peer_all_reduce",
           api_version=API_VERSION_TYPED_FFI
+        ROOT out = u32[] copy(all-reduce)
       }
     )",
                                             GetParam());
@@ -1112,9 +1114,10 @@ TEST_P(AllReduceTest, MulticastAllReduce) {
       ENTRY test_computation {
         c0 = u32[] constant(1)
         in = u32[]{:S(1)} copy(c0)
-        ROOT all-reduce = u32[] custom-call(in),
+        all-reduce = u32[] custom-call(in),
           custom_call_target="__xla_test_$0_multimem_all_reduce",
           api_version=API_VERSION_TYPED_FFI
+        ROOT out = u32[] copy(all-reduce)
       }
     )",
                                             GetParam());
@@ -1160,9 +1163,10 @@ TEST_P(AllReduceTest, SymMulticastAllReduce) {
       ENTRY test_computation {
         c0 = u32[] constant(1)
         in = u32[]{:S(1)} copy(c0)
-        ROOT all-reduce = u32[] custom-call(in),
+        all-reduce = u32[] custom-call(in),
           custom_call_target="__xla_test_$0_sym_multimem_all_reduce",
           api_version=API_VERSION_TYPED_FFI
+        ROOT out = u32[] copy(all-reduce)
       }
     )",
                                             GetParam());
@@ -1209,9 +1213,10 @@ TEST_P(AllReduceTest, SymPeerAllReduce) {
       ENTRY test_computation {
         id = u32[] replica-id()
         in = u32[]{:S(1)} copy(id)
-        ROOT all-reduce = u32[] custom-call(in),
+        all-reduce = u32[] custom-call(in),
           custom_call_target="__xla_test_$0_sym_peer_all_reduce",
           api_version=API_VERSION_TYPED_FFI
+        ROOT out = u32[] copy(all-reduce)
       }
     )",
                                             GetParam());
