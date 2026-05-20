@@ -22,7 +22,6 @@ limitations under the License.
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "xla/autotuning.pb.h"
@@ -41,7 +40,6 @@ limitations under the License.
 #include "xla/stream_executor/blas.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/stream_executor/gpu/gpu_blas_lt.h"
-#include "xla/stream_executor/stream.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
@@ -225,12 +223,11 @@ HipblasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
     TF_ASSIGN_OR_RETURN(BlasLt::Epilogue epilogue,
                         AsBlasLtEpilogue(backend_config.epilogue()));
 
-    TF_ASSIGN_OR_RETURN(std::unique_ptr<se::Stream> stream,
-                        stream_executor()->CreateStream());
+    TF_ASSIGN_OR_RETURN(BlasLt * blas_lt,
+                        se::gpu::BlasLt::Get(stream_executor()));
 
-    TF_ASSIGN_OR_RETURN(
-        std::unique_ptr<BlasLt::MatmulPlan> plan,
-        se::gpu::BlasLt::GetMatmulPlan(stream.get(), gemm_config, epilogue));
+    TF_ASSIGN_OR_RETURN(BlasLt::MatmulPlanPtr plan,
+                        blas_lt->GetMatmulPlan(gemm_config, epilogue));
 
     const Shape& output_shape = instr.shape();
     if (!output_shape.IsTuple() || output_shape.tuple_shapes().empty()) {
@@ -243,8 +240,7 @@ HipblasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
 
     TF_ASSIGN_OR_RETURN(
         std::vector<BlasLt::MatmulAlgorithm> algorithms,
-        plan->GetAlgorithms(stream.get(), GemmConfig::kNumAlgorithms,
-                            workspace_size));
+        plan->GetAlgorithms(GemmConfig::kNumAlgorithms, workspace_size));
     int num_algorithms = algorithms.size();
     std::vector<std::unique_ptr<BackendConfig>> configs;
     configs.reserve(num_algorithms);
@@ -287,10 +283,10 @@ HipblasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
       return std::vector<std::unique_ptr<BackendConfig>>();
     }
 
-    TF_ASSIGN_OR_RETURN(std::unique_ptr<se::Stream> stream,
-                        stream_executor()->CreateStream());
-    auto plan_or = se::gpu::BlasLt::GetMatmulPlan(stream.get(), *gemm_config_or,
-                                                  BlasLt::Epilogue::kDefault);
+    TF_ASSIGN_OR_RETURN(BlasLt * blas_lt,
+                        se::gpu::BlasLt::Get(stream_executor()));
+    auto plan_or =
+        blas_lt->GetMatmulPlan(*gemm_config_or, BlasLt::Epilogue::kDefault);
     if (!plan_or.ok()) {
       VLOG(2) << "hipBLASLt MX: GetMatmulPlan failed: " << plan_or.status();
       return std::vector<std::unique_ptr<BackendConfig>>();
@@ -299,8 +295,7 @@ HipblasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
     int64_t workspace_size = GemmConfig::kGFX950Workspace;
     TF_ASSIGN_OR_RETURN(
         std::vector<BlasLt::MatmulAlgorithm> algorithms,
-        (*plan_or)->GetAlgorithms(stream.get(), GemmConfig::kNumAlgorithms,
-                                  workspace_size));
+        (*plan_or)->GetAlgorithms(GemmConfig::kNumAlgorithms, workspace_size));
     if (algorithms.empty()) {
       VLOG(2) << "hipBLASLt MX: no algorithms found for scaled dot.";
       return std::vector<std::unique_ptr<BackendConfig>>();
@@ -321,10 +316,9 @@ HipblasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
     TF_ASSIGN_OR_RETURN(GpuBackendConfig gpu_config,
                         instr.backend_config<GpuBackendConfig>());
 
-    TF_ASSIGN_OR_RETURN(std::unique_ptr<se::Stream> stream,
-                        stream_executor()->CreateStream());
+    TF_ASSIGN_OR_RETURN(BlasLt * blas_lt,
+                        se::gpu::BlasLt::Get(stream_executor()));
 
-    std::unique_ptr<BlasLt::MatmulPlan> plan;
     int64_t workspace_size;
     const GroupedGemmBackendConfig& grouped_config =
         gpu_config.grouped_gemm_backend_config();
@@ -340,8 +334,9 @@ HipblasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
     TF_ASSIGN_OR_RETURN(BlasLt::Epilogue epilogue,
                         AsBlasLtEpilogue(backend_config.epilogue()));
 
-    TF_ASSIGN_OR_RETURN(plan, se::gpu::BlasLt::GetGroupedMatmulPlan(
-                                  stream.get(), grouped_gemm_config, epilogue));
+    TF_ASSIGN_OR_RETURN(
+        BlasLt::MatmulPlanPtr plan,
+        blas_lt->GetGroupedMatmulPlan(grouped_gemm_config, epilogue));
 
     const Shape& output_shape = instr.shape();
     if (!output_shape.IsTuple() || output_shape.tuple_shapes().empty()) {
@@ -353,8 +348,7 @@ HipblasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
 
     TF_ASSIGN_OR_RETURN(
         std::vector<BlasLt::MatmulAlgorithm> algorithms,
-        plan->GetAlgorithms(stream.get(), GemmConfig::kNumAlgorithms,
-                            workspace_size));
+        plan->GetAlgorithms(GemmConfig::kNumAlgorithms, workspace_size));
     int num_algorithms = algorithms.size();
     std::vector<std::unique_ptr<BackendConfig>> configs;
     configs.reserve(num_algorithms);

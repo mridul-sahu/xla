@@ -20,7 +20,6 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
-#include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "xla/autotuning.pb.h"
@@ -37,7 +36,6 @@ limitations under the License.
 #include "xla/stream_executor/blas.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/stream_executor/gpu/gpu_blas_lt.h"
-#include "xla/stream_executor/stream.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
@@ -101,12 +99,11 @@ CublasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
   TF_ASSIGN_OR_RETURN(BlasLt::Epilogue epilogue,
                       AsBlasLtEpilogue(backend_config.epilogue()));
 
-  TF_ASSIGN_OR_RETURN(std::unique_ptr<se::Stream> stream,
-                      stream_executor()->CreateStream());
+  TF_ASSIGN_OR_RETURN(BlasLt * blas_lt,
+                      se::gpu::BlasLt::Get(stream_executor()));
 
-  TF_ASSIGN_OR_RETURN(
-      std::unique_ptr<BlasLt::MatmulPlan> plan,
-      se::gpu::BlasLt::GetMatmulPlan(stream.get(), gemm_config, epilogue));
+  TF_ASSIGN_OR_RETURN(std::unique_ptr<BlasLt::MatmulPlan> plan,
+                      blas_lt->GetMatmulPlan(gemm_config, epilogue));
 
   const Shape& output_shape = instr.shape();
   if (!output_shape.IsTuple() || output_shape.tuple_shapes().empty()) {
@@ -119,8 +116,7 @@ CublasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
 
   TF_ASSIGN_OR_RETURN(
       std::vector<BlasLt::MatmulAlgorithm> algorithms,
-      plan->GetAlgorithms(stream.get(), GemmConfig::kNumAlgorithms,
-                          workspace_size));
+      plan->GetAlgorithms(GemmConfig::kNumAlgorithms, workspace_size));
   int num_algorithms = algorithms.size();
   std::vector<std::unique_ptr<BackendConfig>> configs;
   configs.reserve(num_algorithms);

@@ -419,7 +419,6 @@ cc_library(
         "//xla/tsl/platform:macros",
         "//xla/tsl/platform:statusor",
         "//xla/tsl/util:determinism",
-        "//xla/tsl/util:determinism_hdr_lib",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
