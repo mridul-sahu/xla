@@ -41,6 +41,11 @@ template <class ProtoType, class SerializedProtoType>
 inline void SerializeProto(const ProtoType& proto,
                            SerializedProtoType* serialized_proto) {
   auto size = proto.ByteSizeLong();
+  if (size == 0) {
+    serialized_proto->size = 0;
+    serialized_proto->bytes = nullptr;
+    return;
+  }
   auto bytes = new char[size];
   CHECK(proto.SerializeToArray(bytes, size));
   serialized_proto->size = size;
@@ -63,7 +68,6 @@ template <class ProtoType, class SerializedProtoType>
 inline ProtoType DeserializeProto(const SerializedProtoType& serialized_proto) {
   ProtoType proto;
   if (serialized_proto.bytes != nullptr) {
-    CHECK_GT(serialized_proto.size, 0);
     CHECK(proto.ParseFromArray(serialized_proto.bytes, serialized_proto.size))
         << "Invalid buffer, failed to deserialize buffer.";
   }
@@ -73,9 +77,9 @@ inline ProtoType DeserializeProto(const SerializedProtoType& serialized_proto) {
 // Releases the memory allocated for serialized protos.
 template <class SerializedProtoType>
 inline void SerializedProto_Free(const SerializedProtoType& serialized_proto) {
-  CHECK_NE(serialized_proto.bytes, nullptr);
-  CHECK_GT(serialized_proto.size, 0);
-  delete[] serialized_proto.bytes;
+  if (serialized_proto.bytes != nullptr) {
+    delete[] serialized_proto.bytes;
+  }
 }
 
 }  // namespace tpu
