@@ -55,5 +55,14 @@ TEST(DnnTest, VersionInfoComparisonOperators) {
   }
 }
 
+TEST(DnnDeathTest, PoolingDescriptorSetDimOutOfBounds) {
+  EXPECT_DEATH(
+      {
+        dnn::PoolingDescriptor pool(1);
+        pool.set_window_height(1337);
+      },
+      "\\(1 vs\\. 1\\)");
+}
+
 }  // namespace
 }  // namespace stream_executor
