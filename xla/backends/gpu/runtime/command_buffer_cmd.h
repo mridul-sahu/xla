@@ -31,42 +31,10 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/command_state.h"
 #include "xla/backends/gpu/runtime/thunk.h"
 #include "xla/service/buffer_assignment.h"
-#include "xla/service/shaped_slice.h"
 #include "xla/stream_executor/command_buffer.h"
 #include "xla/stream_executor/stream.h"
-#include "xla/xla_data.pb.h"
 
 namespace xla::gpu {
-
-//===----------------------------------------------------------------------===//
-// CaseCmd
-//===----------------------------------------------------------------------===//
-
-class CaseCmd : public Command {
- public:
-  CaseCmd(ShapedSlice index, std::vector<CommandExecutor> branches);
-
-  absl::Status Initialize(const Thunk::InitializeParams& params) override;
-
-  absl::StatusOr<const se::CommandBuffer::Command*> Record(
-      const Thunk::ExecuteParams& execute_params,
-      const RecordParams& record_params, RecordAction record_action,
-      se::CommandBuffer* command_buffer) override;
-
-  BufferUses buffer_uses() const override;
-
-  absl::Status WalkNested(
-      absl::FunctionRef<absl::Status(Thunk*)> callback) override;
-
- private:
-  ShapedSlice index_;
-  bool index_is_bool_;
-  std::vector<CommandExecutor> branches_;
-};
-
-//===----------------------------------------------------------------------===//
-// WhileCmd
-//===----------------------------------------------------------------------===//
 
 class WhileCmd : public Command {
  public:
@@ -90,6 +58,8 @@ class WhileCmd : public Command {
       absl::FunctionRef<absl::Status(Thunk*)> callback) override;
 
  private:
+  absl::Status WalkNestedCommands(CommandWalker callback) override;
+
   BufferAllocation::Slice pred_;
 
   CommandExecutor cond_commands_;
