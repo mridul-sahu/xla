@@ -155,14 +155,8 @@ std::unique_ptr<HloPassPipeline> GetCublasRewriterPipeline(
 std::unique_ptr<GpuCodegenBackend> CreateCublasLtBackend(
     se::StreamExecutor* stream_executor, const DebugOptions* debug_options,
     Compiler* compiler, const Compiler::GpuTargetConfig* target_config) {
-#if GOOGLE_CUDA
   return std::make_unique<CublasLtBackend>(stream_executor, debug_options,
                                            compiler, target_config);
-#elif TENSORFLOW_USE_ROCM
-  return std::make_unique<HipblasLtBackend>(stream_executor, debug_options,
-                                            compiler, target_config);
-#endif
-  LOG(FATAL) << "Neither CUDA nor ROCm is enabled.";
 }
 
 bool IsRocm(se::StreamExecutor* stream_executor) {
@@ -313,7 +307,7 @@ TEST_P(FissionTest, ApplyConfig) {
 INSTANTIATE_TEST_SUITE_P(
     FissionTests, FissionTest,
     ::testing::ValuesIn<FissionTestParams>({
-        {"TritonFusion_Cublas", kTritonFusionHlo, &GetCublasRewriterPipeline,
+        {"TritonFusion_CublasLt", kTritonFusionHlo, &GetCublasRewriterPipeline,
          &CreateCublasLtBackend,
          /*expected_module_substrings_fn=*/
          [](const se::DeviceDescription& device_description) {

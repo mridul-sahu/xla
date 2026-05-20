@@ -172,18 +172,11 @@ class DeterminismTest : public HloPjRtGpuTestBase {
   }
 };
 
-TEST_F(DeterminismTest, CublasLtDot) {
-  if (IsRocm()) {
-    if (!HasHipblasLt()) {
-      GTEST_SKIP() << "No hipblas-lt support on this architecture!";
-    }
-  }
-
-  // This test expects to use CublasLt. Disable other backends, including
-  // Triton.
+TEST_F(DeterminismTest, CublasDot) {
+  // This test expects to use Cublas. Disable other backends, including Triton.
   debug_options_.clear_xla_gpu_experimental_autotune_backends();
   debug_options_.add_xla_gpu_experimental_autotune_backends(
-      autotuner::Backend::CUBLASLT);
+      autotuner::Backend::CUBLAS);
   constexpr absl::string_view kHloText = R"(
 ENTRY e {
   p0 = f32[128,128] parameter(0)
@@ -195,12 +188,11 @@ ENTRY e {
     if (!HasHipblasLt()) {
       GTEST_SKIP() << "No hipblas-lt support on this architecture!";
     }
-    debug_options_.clear_xla_gpu_experimental_autotune_backends();
   }
   debug_options_.set_xla_gpu_enable_triton_gemm(false);
 
-  MatchOptimizedHlo(kHloText,
-                    R"(; CHECK: custom_call_target="__cublas$lt$matmul")",
+  debug_options_.set_xla_gpu_enable_cublaslt(false);
+  MatchOptimizedHlo(kHloText, R"(; CHECK: custom_call_target="__cublas$gemm")",
                     TimerCreation::kForbidden);
   AssertDeterminism(kHloText);
 }
